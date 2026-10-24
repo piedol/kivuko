@@ -311,13 +311,14 @@ fn ask_for_token() {
     alert.setMessageText(&ns(if rejected { "Replace Your NordVPN Token" } else { "Add Your NordVPN Token" }));
     alert.setInformativeText(&ns(
         "Kivuko uses it to get your WireGuard key from NordVPN, and keeps it in your login keychain.\n\n\
-         In Nord Account, open NordVPN › Set up NordVPN manually, generate a token, and paste it here.",
+         In Nord Account, open NordVPN › Advanced settings › Access token › Get Access token, \
+         then copy the token and paste it here.",
     ));
     let field = NSSecureTextField::initWithFrame(
         NSSecureTextField::alloc(mtm),
         NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(320.0, 24.0)),
     );
-    field.setPlaceholderString(Some(&ns("64 letters and numbers")));
+    field.setPlaceholderString(Some(&ns("Paste your access token")));
     alert.setAccessoryView(Some(&field));
     alert.addButtonWithTitle(&ns("Save and Connect"));
     alert.addButtonWithTitle(&ns("Cancel"));
@@ -340,7 +341,7 @@ fn ask_for_token() {
     if !nord::looks_like_token(&token) {
         let oops = NSAlert::new(mtm);
         oops.setMessageText(&ns("That doesn't look like a NordVPN token"));
-        oops.setInformativeText(&ns("A token is 64 letters and numbers. Copy it again from Nord Account and paste it in."));
+        oops.setInformativeText(&ns("Copy the whole access token from Nord Account and paste it in, with no spaces."));
         oops.runModal();
         return ask_for_token();
     }

@@ -156,10 +156,11 @@ pub fn is_wireguard_key(s: &str) -> bool {
             .is_ok_and(|b| b.len() == 32)
 }
 
-/// Nord access tokens are 64 hex characters. Used to catch a wrong paste early.
+/// Catches an obviously wrong paste (empty, a few characters, spaces). Nord's API is the
+/// real check: a wrong token gets "Unauthorized".
 pub fn looks_like_token(s: &str) -> bool {
     let s = s.trim();
-    s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit())
+    (32..=512).contains(&s.len()) && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
 }
 
 pub fn parse_servers(v: &serde_json::Value) -> Vec<Server> {
@@ -276,7 +277,9 @@ mod tests {
         assert!(is_wireguard_key(KEY));
         assert!(!is_wireguard_key("short"));
         assert!(looks_like_token(&"a1".repeat(32)));
+        assert!(looks_like_token(" Abc123_-.xyzAbc123_-.xyzAbc123_-.x "));
         assert!(!looks_like_token("ab12cd!?x"));
+        assert!(!looks_like_token(&"a b".repeat(20)));
     }
 
     /// Talks to the real API: `cargo test -p nord -- --ignored`.

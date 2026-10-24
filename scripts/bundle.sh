@@ -28,10 +28,9 @@ done
 
 # The newest unexpired development profile for a bundle ID, or nothing.
 profile_for() {
-  local want="$TEAM.$1" best="" best_exp=""
+  local want="$TEAM.$1" best="" best_exp="" p plist id exp
   for p in "$PROFILES"/*.provisionprofile(N); do
-    local plist; plist=$(security cms -D -i "$p" 2>/dev/null) || continue
-    local id exp
+    plist=$(security cms -D -i "$p" 2>/dev/null) || continue
     id=$(plutil -extract Entitlements.com\\.apple\\.application-identifier raw - <<<"$plist" 2>/dev/null) || continue
     [[ $id == "$want" ]] || continue
     plutil -extract ProvisionedDevices raw - <<<"$plist" >/dev/null 2>&1 || continue   # development only
