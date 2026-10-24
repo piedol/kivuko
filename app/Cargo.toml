@@ -1,0 +1,27 @@
+[package]
+name = "app"
+description = "Kivuko's menu-bar app: sets up the VPN, connects, and shows status"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "Kivuko"
+path = "src/main.rs"
+
+[dependencies]
+nord.workspace = true
+shared.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+oslog.workspace = true
+objc2.workspace = true
+objc2-foundation.workspace = true
+objc2-app-kit.workspace = true
+objc2-network-extension.workspace = true
+objc2-service-management.workspace = true
+block2.workspace = true
+dispatch2.workspace = true
+security-framework = "3.7"

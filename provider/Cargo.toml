@@ -1,0 +1,31 @@
+[package]
+name = "provider"
+description = "The packet-tunnel app extension: picks a Nord server and runs WireGuard (GotaTun) on the utun macOS creates"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "provider"
+path = "src/main.rs"
+
+[dependencies]
+nord.workspace = true
+shared.workspace = true
+gotatun = { version = "0.10.2", default-features = false, features = ["device", "ring"] }
+tokio = { version = "1.43", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
+ipnetwork = "0.21.1"
+base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+libc.workspace = true
+log.workspace = true
+oslog.workspace = true
+objc2.workspace = true
+objc2-foundation.workspace = true
+objc2-network-extension.workspace = true
+block2.workspace = true
+
+[dev-dependencies]
+bytes = "1"

@@ -1,0 +1,36 @@
+[workspace]
+members = ["nord", "shared", "provider", "app"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "PolyForm-Noncommercial-1.0.0"
+publish = false
+
+[workspace.dependencies]
+nord = { path = "nord" }
+shared = { path = "shared" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+ureq = { version = "3.5", default-features = false, features = ["rustls", "json"] }
+objc2 = "0.6.5"
+objc2-foundation = "0.3.2"
+objc2-app-kit = "0.3.2"
+objc2-network-extension = "0.3.2"
+objc2-service-management = "0.3.2"
+objc2-security = "0.3.2"
+block2 = "0.6.2"
+dispatch2 = "0.3.1"
+oslog = "0.2"
+log = "0.4"
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+debug = false
