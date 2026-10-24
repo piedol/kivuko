@@ -151,26 +151,28 @@ pub fn stop() {
     }
 }
 
-/// Ask the running tunnel for its status.
-pub fn request_status(then: impl FnOnce(Option<Status>) + 'static) {
-    let Some(s) = session() else { return then(None) };
+/// Ask the running tunnel for its status. The answer arrives on a background queue, so
+/// `then` runs on the main queue.
+pub fn request_status(then: fn(Status)) {
+    let Some(s) = session() else {
+        log::warn!("status request: no tunnel session");
+        return;
+    };
     if !matches!(status(), NEVPNStatus::Connected | NEVPNStatus::Reasserting | NEVPNStatus::Connecting) {
-        return then(None);
+        log::info!("status request skipped (VPN status {})", status().0);
+        return;
     }
-    let then = std::rc::Rc::new(RefCell::new(Some(then)));
-    let reply = then.clone();
     let handler = RcBlock::new(move |data: *mut NSData| {
         let status = unsafe { data.as_ref() }.and_then(|d| shared::decode::<Status>(&d.to_vec()));
-        if let Some(f) = reply.borrow_mut().take() {
-            f(status);
+        log::info!("tunnel answered the status request: {}", status.as_ref().and_then(|s| s.hostname.as_deref()).unwrap_or("no server"));
+        if let Some(status) = status {
+            dispatch2::DispatchQueue::main().exec_async(move || then(status));
         }
     });
     let message = NSData::with_bytes(&shared::encode(&Request::Status));
     let sent = unsafe { s.sendProviderMessage_returnError_responseHandler(&message, None, Some(&handler)) };
-    if !sent
-        && let Some(f) = then.borrow_mut().take()
-    {
-        f(None);
+    if !sent {
+        log::warn!("couldn't ask the tunnel for its status");
     }
 }
 

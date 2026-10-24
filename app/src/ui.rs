@@ -35,6 +35,11 @@ define_class!(
         fn menu_will_open(&self, menu: &NSMenu) {
             crate::app::menu_will_open(menu);
         }
+
+        #[unsafe(method(menuDidClose:))]
+        fn menu_did_close(&self, _menu: &NSMenu) {
+            crate::app::menu_did_close();
+        }
     }
 
     impl Controller {

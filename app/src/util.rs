@@ -6,7 +6,6 @@ use objc2::rc::Retained;
 use objc2_foundation::NSString;
 
 /// Run `f` on the main queue after `secs` seconds.
-#[cfg(debug_assertions)]
 pub fn main_after(secs: f64, f: impl FnOnce() + Send + 'static) {
     let when = dispatch2::DispatchTime::NOW.time((secs * 1_000_000_000.0) as i64);
     let _ = dispatch2::DispatchQueue::main().after(when, f);

@@ -42,17 +42,22 @@ enum Problem {
 
 struct Shell {
     item: Retained<NSStatusItem>,
-    menu: Retained<NSMenu>,
-    /// The status row at the top, updated in place when the tunnel answers.
+    /// The status row and the Connect/Disconnect row, updated in place while the menu is
+    /// open (rebuilding an open menu closes it).
     header: Option<Retained<NSMenuItem>>,
+    action: Option<Retained<NSMenuItem>>,
 }
 
 thread_local! {
     static SHELL: RefCell<Option<Shell>> = const { RefCell::new(None) };
     static PROBLEM: RefCell<Option<Problem>> = const { RefCell::new(None) };
     static STATUS: RefCell<Option<Status>> = const { RefCell::new(None) };
+    static MENU_OPEN: Cell<bool> = const { Cell::new(false) };
     /// Settings changed while connected: start again once the tunnel is down.
     static RECONNECT: Cell<bool> = const { Cell::new(false) };
+    /// Auto-Connect at launch waits for macOS's first real status (it reports Invalid
+    /// for a moment after loading, even while the tunnel is up).
+    static LAUNCH_CHECK: Cell<bool> = const { Cell::new(false) };
 }
 
 pub fn run() {
@@ -105,16 +110,17 @@ pub fn launched(mtm: MainThreadMarker) {
         log::info!("launched; VPN configuration {}", if vpn::exists() { "found" } else { "not set up yet" });
         refresh();
         // Auto-Connect also means connecting when Kivuko starts (Quit turns the VPN off).
-        // Right after loading, macOS can report Invalid before Disconnected.
-        let idle = matches!(vpn::status(), NEVPNStatus::Disconnected | NEVPNStatus::Invalid);
-        if prefs::get().auto_connect && vpn::exists() && idle {
-            connect();
+        if prefs::get().auto_connect && vpn::exists() {
+            LAUNCH_CHECK.with(|c| c.set(true));
+            launch_auto_connect(false);
+            // If macOS never reports a status change, decide after a few seconds.
+            util::main_after(3.0, || launch_auto_connect(true));
         }
     });
-    // Debug builds: `TUNNEL_SHOW_MENU=1` opens the menu after launch, for screenshots.
-    #[cfg(debug_assertions)]
-    if std::env::var_os("TUNNEL_SHOW_MENU").is_some() {
-        util::main_after(1.5, || {
+    // `KIVUKO_SHOW_MENU=<seconds>` opens the menu that long after launch, for README
+    // screenshots.
+    if let Some(delay) = std::env::var("KIVUKO_SHOW_MENU").ok().map(|v| v.parse::<f64>().unwrap_or(6.0)) {
+        util::main_after(delay, || {
             let item = SHELL.with(|sh| sh.borrow().as_ref().map(|s| s.item.clone()));
             if let Some(button) = item.and_then(|i| i.button(self::mtm())) {
                 unsafe { button.performClick(None) };
@@ -129,7 +135,7 @@ fn build_status_item(mtm: MainThreadMarker) {
     menu.setAutoenablesItems(false);
     menu.setDelegate(Some(&ui::menu_delegate(mtm)));
     item.setMenu(Some(&menu));
-    SHELL.with(|sh| *sh.borrow_mut() = Some(Shell { item, menu, header: None }));
+    SHELL.with(|sh| *sh.borrow_mut() = Some(Shell { item, header: None, action: None }));
     refresh_icon();
 }
 
@@ -141,14 +147,13 @@ fn set_problem(p: Option<Problem>) {
     refresh();
 }
 
-/// Update the icon, and the menu if it's open.
+/// Update the icon, and the menu's live rows if it's open. A closed menu is rebuilt the
+/// next time it opens.
 pub fn refresh() {
     refresh_icon();
-    let menu = SHELL.with(|sh| sh.borrow().as_ref().map(|s| s.menu.clone()));
-    if let Some(menu) = menu
-        && menu.numberOfItems() > 0
-    {
-        build_menu(&menu);
+    if MENU_OPEN.with(Cell::get) {
+        update_header();
+        update_action();
     }
 }
 
@@ -174,9 +179,29 @@ fn refresh_icon() {
     });
 }
 
+/// Auto-Connect when Kivuko starts: connect only if the tunnel is really down.
+fn launch_auto_connect(give_up_waiting: bool) {
+    if !LAUNCH_CHECK.with(Cell::get) {
+        return;
+    }
+    match vpn::status() {
+        NEVPNStatus::Disconnected => {}
+        NEVPNStatus::Invalid if give_up_waiting => {}
+        NEVPNStatus::Invalid => return,
+        _ => {
+            LAUNCH_CHECK.with(|c| c.set(false));
+            return;
+        }
+    }
+    LAUNCH_CHECK.with(|c| c.set(false));
+    log::info!("connecting at launch (Auto-Connect)");
+    connect();
+}
+
 pub fn vpn_status_changed() {
     let status = vpn::status();
     log::info!("VPN status {}", status.0);
+    launch_auto_connect(false);
     match status {
         NEVPNStatus::Connected => {
             if matches!(PROBLEM.with(|p| p.borrow().clone()), Some(Problem::ConnectFailed(_))) {
@@ -186,6 +211,7 @@ pub fn vpn_status_changed() {
             if prefs::get().auto_connect {
                 vpn::set_on_demand(true, refresh);
             }
+            fetch_status();
         }
         NEVPNStatus::Disconnected => {
             STATUS.with(|s| *s.borrow_mut() = None);
@@ -206,6 +232,9 @@ pub fn vpn_status_changed() {
                         } else {
                             Problem::ConnectFailed(e)
                         }));
+                    } else if vpn::on_demand() {
+                        // Auto-Connect is already bringing it back; not worth a warning.
+                        log::info!("tunnel stopped ({e}); Auto-Connect will reconnect");
                     } else {
                         set_problem(Some(Problem::ConnectFailed(e)));
                     }
@@ -221,6 +250,9 @@ pub fn vpn_status_changed() {
 
 /// Connect, setting up whatever's missing on the way.
 pub fn connect() {
+    if matches!(vpn::status(), NEVPNStatus::Connected | NEVPNStatus::Connecting | NEVPNStatus::Reasserting) {
+        return refresh();
+    }
     let Some(token) = keychain::token() else {
         ask_for_token();
         return;
@@ -359,14 +391,21 @@ fn toggle(mtm: MainThreadMarker, title: &str, tag: isize, on: bool, tip: &str) -
     item
 }
 
+pub fn menu_did_close() {
+    MENU_OPEN.with(|o| o.set(false));
+}
+
 pub fn menu_will_open(menu: &NSMenu) {
+    MENU_OPEN.with(|o| o.set(true));
     build_menu(menu);
-    // Ask the tunnel which server it's on; update the header when it answers.
+    fetch_status();
+}
+
+/// Ask the tunnel which server it's on; update the menu when it answers.
+fn fetch_status() {
     vpn::request_status(|status| {
-        if status.is_some() {
-            STATUS.with(|s| *s.borrow_mut() = status);
-            update_header();
-        }
+        STATUS.with(|s| *s.borrow_mut() = Some(status));
+        update_header();
     });
 }
 
@@ -380,13 +419,13 @@ fn header_text() -> (String, String) {
     match vpn::status() {
         NEVPNStatus::Connected => {
             let status = STATUS.with(|s| s.borrow().clone());
-            let time = vpn::connected_secs().map(util::duration);
-            let detail = match status.as_ref().and_then(|s| s.server.clone()) {
-                Some(server) => {
-                    let city = status.as_ref().and_then(|s| s.city.clone()).unwrap_or_default();
-                    [Some(server), (!city.is_empty()).then_some(city), time].into_iter().flatten().collect::<Vec<_>>().join(" · ")
-                }
-                None => time.map_or("Connected".into(), |t| format!("For {t}")),
+            let time = vpn::connected_secs().map(|s| if s < 60 { "just now".to_string() } else { util::duration(s) });
+            let detail = match (status.as_ref().and_then(|s| s.server.clone()), time) {
+                (Some(server), Some(t)) => format!("{server} · {t}"),
+                (Some(server), None) => server,
+                (None, Some(t)) if t == "just now" => "Just now".into(),
+                (None, Some(t)) => format!("For {t}"),
+                (None, None) => String::new(),
             };
             ("Connected".into(), detail)
         }
@@ -404,15 +443,34 @@ fn update_header() {
     let header = SHELL.with(|sh| sh.borrow().as_ref().and_then(|s| s.header.clone()));
     let Some(header) = header else { return };
     let (title, subtitle) = header_text();
+    let (symbol, color) = match vpn::status() {
+        NEVPNStatus::Connected => ("checkmark.shield.fill", NSColor::systemGreenColor()),
+        _ => ("shield", NSColor::secondaryLabelColor()),
+    };
+    header.setImage(ui::state_symbol(symbol, color).as_deref());
     header.setTitle(&ns(&title));
     header.setSubtitle((!subtitle.is_empty()).then(|| ns(&subtitle)).as_deref());
     if let Some(s) = STATUS.with(|s| s.borrow().clone()) {
-        let mut tip = vec![format!("Received {} · sent {}", util::bytes(s.rx_bytes), util::bytes(s.tx_bytes))];
-        if let Some(h) = s.hostname {
-            tip.insert(0, h);
-        }
-        header.setToolTip(Some(&ns(&tip.join("\n"))));
+        let place = [s.city.clone(), s.hostname.clone()].into_iter().flatten().collect::<Vec<_>>().join(" · ");
+        let data = format!("Received {} · sent {}", util::bytes(s.rx_bytes), util::bytes(s.tx_bytes));
+        header.setToolTip(Some(&ns(&format!("{place}\n{data}"))));
     }
+}
+
+/// The one action that matters right now: Connect, Disconnect, Stop Connecting.
+fn update_action() {
+    let action = SHELL.with(|sh| sh.borrow().as_ref().and_then(|s| s.action.clone()));
+    let Some(action) = action else { return };
+    let (title, tag) = match vpn::status() {
+        NEVPNStatus::Connected | NEVPNStatus::Reasserting => ("Disconnect", tag::DISCONNECT),
+        NEVPNStatus::Connecting => ("Stop Connecting", tag::DISCONNECT),
+        NEVPNStatus::Disconnecting => ("Disconnecting…", 0),
+        _ if !vpn::exists() => ("Set Up and Connect", tag::CONNECT),
+        _ => ("Connect", tag::CONNECT),
+    };
+    action.setTitle(&ns(title));
+    action.setTag(tag);
+    action.setEnabled(tag != 0);
 }
 
 fn build_menu(menu: &NSMenu) {
@@ -424,11 +482,6 @@ fn build_menu(menu: &NSMenu) {
     // Status, then the one action that matters right now.
     let header = menu_item(mtm, "", 0);
     unsafe { header.setAction(None) };
-    let (symbol, color) = match status {
-        NEVPNStatus::Connected => ("checkmark.shield.fill", NSColor::systemGreenColor()),
-        _ => ("shield", NSColor::secondaryLabelColor()),
-    };
-    header.setImage(ui::state_symbol(symbol, color).as_deref());
     menu.addItem(&header);
     SHELL.with(|sh| {
         if let Some(s) = sh.borrow_mut().as_mut() {
@@ -437,18 +490,14 @@ fn build_menu(menu: &NSMenu) {
     });
     update_header();
 
-    let action = match status {
-        NEVPNStatus::Connected | NEVPNStatus::Reasserting => menu_item(mtm, "Disconnect", tag::DISCONNECT),
-        NEVPNStatus::Connecting => menu_item(mtm, "Stop Connecting", tag::DISCONNECT),
-        NEVPNStatus::Disconnecting => {
-            let i = menu_item(mtm, "Disconnecting…", 0);
-            i.setEnabled(false);
-            i
-        }
-        _ if !vpn::exists() => menu_item(mtm, "Set Up and Connect", tag::CONNECT),
-        _ => menu_item(mtm, "Connect", tag::CONNECT),
-    };
+    let action = menu_item(mtm, "", 0);
     menu.addItem(&action);
+    SHELL.with(|sh| {
+        if let Some(s) = sh.borrow_mut().as_mut() {
+            s.action = Some(action.clone());
+        }
+    });
+    update_action();
 
     // Where to connect.
     menu.addItem(&NSMenuItem::separatorItem(mtm));

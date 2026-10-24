@@ -17,6 +17,12 @@ EXT_ID=top.piedol.kivuko.tunnel
 EXT_NAME=KivukoTunnel
 TEAM=ABCDE12345
 PROFILES=~/Library/Developer/Xcode/UserData/Provisioning\ Profiles
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+
+# Only one copy of the app may stay registered with macOS. With two copies of the tunnel
+# extension (same bundle ID), launching the app makes macOS "uninstall" one of them and
+# stop every running instance, which drops the VPN.
+forget() { [[ -e $1 ]] || return 0; "$LSREGISTER" -u "$1" 2>/dev/null; rm -rf "$1"; }
 
 INSTALL=0
 for a in "$@"; do
@@ -48,6 +54,9 @@ if [[ -z $APP_PROFILE || -z $EXT_PROFILE ]]; then
   (cd signing && xcodegen -q -s project.yml && xcodebuild -project KivukoSigning.xcodeproj -scheme Kivuko \
     -configuration Debug -derivedDataPath build -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
     build -quiet) || { echo "Xcode couldn't create the signing. Is Xcode signed in (Settings › Accounts)?"; exit 1; }
+  # Only the profiles were wanted; the stub app must not stay registered.
+  forget signing/build/Build/Products/Debug/Kivuko.app
+  rm -rf signing/build
   APP_PROFILE=$(profile_for $APP_ID)
   EXT_PROFILE=$(profile_for $EXT_ID)
 fi
@@ -94,6 +103,13 @@ if (( INSTALL )); then
   pkill -x "$NAME" 2>/dev/null || true
   rm -rf "/Applications/$NAME.app"
   ditto "$APP" "/Applications/$NAME.app"
+  # A copied bundle can carry an access-control tag (com.apple.macl) that makes macOS
+  # re-check and re-register the app on every launch, which restarts the tunnel.
+  xattr -dr com.apple.macl "/Applications/$NAME.app" 2>/dev/null || true
+  forget "$APP"
   open "/Applications/$NAME.app"
+  # The first launch can add the tag again; clear it once the app is running.
+  sleep 3
+  xattr -dr com.apple.macl "/Applications/$NAME.app" 2>/dev/null || true
   echo "Installed to /Applications/$NAME.app"
 fi

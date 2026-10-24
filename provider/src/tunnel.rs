@@ -99,6 +99,7 @@ pub fn wake() {
 }
 
 pub fn message(request: Option<Request>, reply: Option<Reply>) {
+    log::info!("message from the app: {request:?}");
     rt().spawn(async move {
         let bytes = match request {
             Some(Request::Status) => shared::encode(&status().await),
