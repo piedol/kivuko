@@ -12,8 +12,10 @@ pub mod ids {
     pub const PROVIDER_BUNDLE: &str = "top.piedol.kivuko.tunnel";
     /// Unified-log subsystem for both processes.
     pub const LOG_SUBSYSTEM: &str = "top.piedol.kivuko";
-    /// Where the user's Nord access token lives in the login keychain. The app creates
-    /// this item itself, so macOS never asks whether it may read it.
+    /// The Nord access token's item in the login keychain. The app creates it, so macOS
+    /// never asks whether the app may read it. The tunnel never reads it: the app hands the
+    /// token over when you click Connect. (On macOS, VPN apps and extensions are pointed
+    /// at the system keychain for data-protection items, so a shared keychain group fails.)
     pub const KEYCHAIN_SERVICE: &str = "Kivuko";
     pub const KEYCHAIN_ACCOUNT: &str = "NordVPN token";
     /// The description macOS shows in System Settings › VPN.
@@ -33,8 +35,9 @@ pub mod net {
 pub mod keys {
     /// `providerConfiguration["settings"]`: JSON-encoded [`super::Settings`].
     pub const SETTINGS: &str = "settings";
-    /// `startVPNTunnel(options:)["privateKey"]`: the NordLynx private key (base64).
-    pub const PRIVATE_KEY: &str = "privateKey";
+    /// `startVPNTunnel(options:)["token"]`: the Nord access token. The tunnel uses it to
+    /// fetch the WireGuard key itself, since its own traffic passes the kill switch.
+    pub const TOKEN: &str = "token";
 }
 
 /// Which DNS servers the tunnel hands to macOS.
@@ -95,6 +98,12 @@ pub struct Status {
     pub tx_bytes: u64,
     /// The last thing that went wrong, in words for the menu.
     pub problem: Option<String>,
+}
+
+/// Start errors that won't fix themselves by retrying (the app turns Auto-Connect off).
+/// The tunnel's messages for these mention one of the two phrases below.
+pub fn is_setup_error(message: &str) -> bool {
+    message.contains("access token") || message.contains("WireGuard key")
 }
 
 pub fn encode<T: Serialize>(v: &T) -> Vec<u8> {

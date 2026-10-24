@@ -53,8 +53,6 @@ thread_local! {
     static STATUS: RefCell<Option<Status>> = const { RefCell::new(None) };
     /// Settings changed while connected: start again once the tunnel is down.
     static RECONNECT: Cell<bool> = const { Cell::new(false) };
-    /// Fetching the WireGuard key from Nord.
-    static FETCHING_KEY: Cell<bool> = const { Cell::new(false) };
 }
 
 pub fn run() {
@@ -107,7 +105,9 @@ pub fn launched(mtm: MainThreadMarker) {
         log::info!("launched; VPN configuration {}", if vpn::exists() { "found" } else { "not set up yet" });
         refresh();
         // Auto-Connect also means connecting when Kivuko starts (Quit turns the VPN off).
-        if prefs::get().auto_connect && vpn::exists() && vpn::status() == NEVPNStatus::Disconnected {
+        // Right after loading, macOS can report Invalid before Disconnected.
+        let idle = matches!(vpn::status(), NEVPNStatus::Disconnected | NEVPNStatus::Invalid);
+        if prefs::get().auto_connect && vpn::exists() && idle {
             connect();
         }
     });
@@ -182,6 +182,10 @@ pub fn vpn_status_changed() {
             if matches!(PROBLEM.with(|p| p.borrow().clone()), Some(Problem::ConnectFailed(_))) {
                 set_problem(None);
             }
+            // The tunnel now has its key, so On-Demand starts will work.
+            if prefs::get().auto_connect {
+                vpn::set_on_demand(true, refresh);
+            }
         }
         NEVPNStatus::Disconnected => {
             STATUS.with(|s| *s.borrow_mut() = None);
@@ -189,7 +193,20 @@ pub fn vpn_status_changed() {
                 start_tunnel(None);
             } else {
                 vpn::last_error(|e| {
-                    if let Some(e) = e {
+                    let Some(e) = e else { return };
+                    if shared::is_setup_error(&e) {
+                        // Retrying can't fix these; with the kill switch on, a retry loop
+                        // would also keep blocking the internet. Stop until the user acts.
+                        vpn::set_on_demand(false, refresh);
+                        let token_problem = e.contains("access token");
+                        set_problem(Some(if token_problem && keychain::has_token() {
+                            Problem::TokenRejected
+                        } else if token_problem {
+                            Problem::NoToken
+                        } else {
+                            Problem::ConnectFailed(e)
+                        }));
+                    } else {
                         set_problem(Some(Problem::ConnectFailed(e)));
                     }
                 });
@@ -204,50 +221,21 @@ pub fn vpn_status_changed() {
 
 /// Connect, setting up whatever's missing on the way.
 pub fn connect() {
-    if !keychain::has_token() && !vpn::exists() {
+    let Some(token) = keychain::token() else {
         ask_for_token();
         return;
-    }
+    };
+    // On-Demand stays off until the tunnel is up (see vpn_status_changed): a start macOS
+    // makes on its own can't carry the token, so the first start must come from here.
     let p = prefs::get();
-    vpn::save(&p, p.auto_connect, |result| match result {
-        Ok(()) => fetch_key_then_start(),
+    vpn::save(&p, false, move |result| match result {
+        Ok(()) => start_tunnel(Some(token)),
         Err(e) => set_problem(Some(Problem::ConnectFailed(format!("macOS didn't save the VPN configuration: {e}")))),
     });
 }
 
-/// Hand the tunnel a fresh key from Nord when we can; otherwise it uses its saved one.
-fn fetch_key_then_start() {
-    let Some(token) = keychain::token() else {
-        if vpn::exists() {
-            start_tunnel(None);
-        } else {
-            ask_for_token();
-        }
-        return;
-    };
-    FETCHING_KEY.with(|f| f.set(true));
-    refresh();
-    util::background(
-        move || nord::Client::default().private_key(&token),
-        |result| {
-            FETCHING_KEY.with(|f| f.set(false));
-            match result {
-                Ok(key) => start_tunnel(Some(key)),
-                Err(nord::Error::Unauthorized) => {
-                    set_problem(Some(Problem::TokenRejected));
-                    start_tunnel(None);
-                }
-                Err(e) => {
-                    log::warn!("couldn't fetch the key, using the saved one: {e}");
-                    start_tunnel(None);
-                }
-            }
-        },
-    );
-}
-
-fn start_tunnel(key: Option<String>) {
-    match vpn::start(key.as_deref()) {
+fn start_tunnel(token: Option<String>) {
+    match vpn::start(token.as_deref()) {
         Ok(()) => {
             if matches!(PROBLEM.with(|p| p.borrow().clone()), Some(Problem::ConnectFailed(_))) {
                 PROBLEM.with(|p| *p.borrow_mut() = None);
@@ -260,8 +248,7 @@ fn start_tunnel(key: Option<String>) {
 
 /// Disconnect and stay disconnected: On-Demand off until the next Connect.
 fn disconnect(then: impl FnOnce() + 'static) {
-    let p = prefs::get();
-    vpn::save(&p, false, move |_| {
+    vpn::set_on_demand(false, move || {
         vpn::stop();
         then();
     });
@@ -387,9 +374,6 @@ pub fn menu_will_open(menu: &NSMenu) {
 fn header_text() -> (String, String) {
     let p = prefs::get();
     let place = p.country.as_ref().map(|c| c.name.clone());
-    if FETCHING_KEY.with(Cell::get) {
-        return ("Connecting…".into(), "Getting your WireGuard key from NordVPN".into());
-    }
     if !vpn::exists() {
         return ("Not Set Up".into(), "Connect once to install the VPN".into());
     }
@@ -453,7 +437,6 @@ fn build_menu(menu: &NSMenu) {
     });
     update_header();
 
-    let busy = FETCHING_KEY.with(Cell::get);
     let action = match status {
         NEVPNStatus::Connected | NEVPNStatus::Reasserting => menu_item(mtm, "Disconnect", tag::DISCONNECT),
         NEVPNStatus::Connecting => menu_item(mtm, "Stop Connecting", tag::DISCONNECT),
@@ -465,9 +448,6 @@ fn build_menu(menu: &NSMenu) {
         _ if !vpn::exists() => menu_item(mtm, "Set Up and Connect", tag::CONNECT),
         _ => menu_item(mtm, "Connect", tag::CONNECT),
     };
-    if busy {
-        action.setEnabled(false);
-    }
     menu.addItem(&action);
 
     // Where to connect.
@@ -591,7 +571,7 @@ pub fn handle_tag(t: isize) {
             // On-Demand follows the switch only while the user wants to be connected.
             if vpn::exists() {
                 let active = !matches!(vpn::status(), NEVPNStatus::Disconnected | NEVPNStatus::Invalid);
-                vpn::save(&prefs::get(), on && (active || vpn::on_demand()), |_| refresh());
+                vpn::set_on_demand(on && (active || vpn::on_demand()), refresh);
             }
         }
         tag::BLOCK_ADS => {

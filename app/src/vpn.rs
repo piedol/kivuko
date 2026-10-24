@@ -115,12 +115,29 @@ fn session() -> Option<Retained<NETunnelProviderSession>> {
     unsafe { m.connection() }.downcast::<NETunnelProviderSession>().ok()
 }
 
-/// Start the tunnel. `key` hands the tunnel a fresh WireGuard key; without it the tunnel
-/// uses the one it saved last time.
-pub fn start(key: Option<&str>) -> Result<(), String> {
+/// Turn On-Demand on or off without touching the rest of the configuration, so a running
+/// tunnel isn't restarted.
+pub fn set_on_demand(on: bool, then: impl FnOnce() + 'static) {
+    let Some(m) = manager() else { return then() };
+    if unsafe { m.isOnDemandEnabled() } == on {
+        return then();
+    }
+    unsafe { m.setOnDemandEnabled(on) };
+    let done = RcBlock::new(once(move |err: *mut NSError| {
+        if let Some(e) = error_text(err) {
+            log::error!("couldn't change On-Demand: {e}");
+        }
+        then();
+    }));
+    unsafe { m.saveToPreferencesWithCompletionHandler(Some(&done)) };
+}
+
+/// Start the tunnel. With `token`, the tunnel fetches a fresh WireGuard key from Nord;
+/// without it, it uses the one it saved last time.
+pub fn start(token: Option<&str>) -> Result<(), String> {
     let session = session().ok_or("Kivuko isn't set up yet.")?;
-    let names: Vec<Retained<NSString>> = key.map(|_| ns(keys::PRIVATE_KEY)).into_iter().collect();
-    let values: Vec<Retained<NSString>> = key.map(ns).into_iter().collect();
+    let names: Vec<Retained<NSString>> = token.map(|_| ns(keys::TOKEN)).into_iter().collect();
+    let values: Vec<Retained<NSString>> = token.map(ns).into_iter().collect();
     let names: Vec<&NSString> = names.iter().map(|n| &**n).collect();
     let values: Vec<&AnyObject> = values.iter().map(|v| -> &AnyObject { v }).collect();
     let options = NSDictionary::from_slices(&names, &values);

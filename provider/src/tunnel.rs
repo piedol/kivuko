@@ -55,10 +55,10 @@ fn bump() -> u64 {
     info.generation
 }
 
-pub fn start(provider: Handle, key_from_app: Option<String>, settings: Settings, done: Done) {
+pub fn start(provider: Handle, token: Option<String>, settings: Settings, done: Done) {
     let generation = bump();
     rt().spawn(async move {
-        match connect(&provider, key_from_app, &settings).await {
+        match connect(&provider, token, &settings).await {
             Ok(server) => {
                 log::info!("connected to {} in {}", server.hostname, server.city);
                 let mut info = INFO.lock().unwrap();
@@ -103,6 +103,7 @@ pub fn message(request: Option<Request>, reply: Option<Reply>) {
         let bytes = match request {
             Some(Request::Status) => shared::encode(&status().await),
             Some(Request::SetKey { key }) if nord::is_wireguard_key(&key) => {
+                // Not used by the app today; kept for replacing the key without a reconnect.
                 let mut store = crate::store::load();
                 store.private_key = Some(key);
                 crate::store::save(&store);
@@ -147,22 +148,37 @@ fn decode_key(b64: &str) -> Result<[u8; 32], String> {
         .decode(b64)
         .ok()
         .and_then(|b| <[u8; 32]>::try_from(b).ok())
-        .ok_or_else(|| "The stored WireGuard key is damaged. Open Kivuko and connect again.".to_string())
+        .ok_or_else(|| "The stored WireGuard key is damaged.".to_string())
 }
 
-async fn connect(provider: &Handle, key_from_app: Option<String>, settings: &Settings) -> Result<nord::Server, String> {
+async fn connect(provider: &Handle, token: Option<String>, settings: &Settings) -> Result<nord::Server, String> {
     stop_device().await;
     let mut store = crate::store::load();
-    if let Some(key) = key_from_app.filter(|k| nord::is_wireguard_key(k))
-        && store.private_key.as_deref() != Some(key.as_str())
-    {
-        store.private_key = Some(key);
-        crate::store::save(&store);
-    }
-    let key = store
-        .private_key
-        .clone()
-        .ok_or("No WireGuard key yet. Open Kivuko and click Connect once.")?;
+    // With a token (a Connect click), refresh the key from Nord; otherwise (On-Demand,
+    // reconnects) use the saved one.
+    let key = match token {
+        Some(token) => match fetch_key(token).await {
+            Ok(k) => {
+                if store.private_key.as_deref() != Some(k.as_str()) {
+                    store.private_key = Some(k.clone());
+                    crate::store::save(&store);
+                    log::info!("saved the WireGuard key from NordVPN");
+                }
+                k
+            }
+            Err(KeyError::Rejected) => {
+                return Err("NordVPN didn't accept the access token. Open Kivuko and replace it.".into());
+            }
+            Err(KeyError::Other(e)) => {
+                log::warn!("couldn't refresh the key: {e}");
+                store.private_key.clone().ok_or(format!("Couldn't get your WireGuard key: {e}."))?
+            }
+        },
+        None => store
+            .private_key
+            .clone()
+            .ok_or("No WireGuard key yet. Open Kivuko and click Connect.")?,
+    };
     let secret = StaticSecret::from(decode_key(&key)?);
     let servers = pick_servers(settings, &mut store).await?;
 
@@ -188,6 +204,22 @@ async fn connect(provider: &Handle, key_from_app: Option<String>, settings: &Set
         log::warn!("no handshake from {}", server.hostname);
     }
     Err("No NordVPN server answered. Check your internet connection; if it's fine, your Nord token may have been revoked.".into())
+}
+
+enum KeyError {
+    Rejected,
+    Other(String),
+}
+
+/// The account's NordLynx key, fetched with the access token.
+async fn fetch_key(token: String) -> Result<String, KeyError> {
+    let result = tokio::task::spawn_blocking(move || nord::Client::new(Duration::from_secs(10)).private_key(&token)).await;
+    match result {
+        Ok(Ok(key)) => Ok(key),
+        Ok(Err(nord::Error::Unauthorized)) => Err(KeyError::Rejected),
+        Ok(Err(e)) => Err(KeyError::Other(e.to_string())),
+        Err(_) => Err(KeyError::Other("the lookup stopped".into())),
+    }
 }
 
 /// Fresh recommendations when Nord's API answers; the last good list when it doesn't.

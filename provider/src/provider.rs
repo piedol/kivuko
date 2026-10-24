@@ -28,11 +28,11 @@ define_class!(
             options: Option<&NSDictionary<NSString, NSObject>>,
             completion: &DynBlock<dyn Fn(*mut NSError)>,
         ) {
-            let key = options
-                .and_then(|o| o.objectForKey(&NSString::from_str(keys::PRIVATE_KEY)))
+            let token = options
+                .and_then(|o| o.objectForKey(&NSString::from_str(keys::TOKEN)))
                 .and_then(|v| v.downcast_ref::<NSString>().map(|s| s.to_string()));
-            log::info!("start requested by {}", if options.is_some() { "the app" } else { "macOS" });
-            tunnel::start(Handle(self.retain()), key, self.settings(), Done(completion.copy()));
+            log::info!("start requested{}", if token.is_some() { " with a token from the app" } else { "" });
+            tunnel::start(Handle(self.retain()), token, self.settings(), Done(completion.copy()));
         }
 
         #[unsafe(method(stopTunnelWithReason:completionHandler:))]

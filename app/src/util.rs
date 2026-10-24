@@ -2,28 +2,14 @@
 
 use std::path::PathBuf;
 
-use dispatch2::DispatchQueue;
 use objc2::rc::Retained;
 use objc2_foundation::NSString;
-
-/// Run `f` on the main queue soon.
-pub fn main_async(f: impl FnOnce() + Send + 'static) {
-    DispatchQueue::main().exec_async(f);
-}
 
 /// Run `f` on the main queue after `secs` seconds.
 #[cfg(debug_assertions)]
 pub fn main_after(secs: f64, f: impl FnOnce() + Send + 'static) {
     let when = dispatch2::DispatchTime::NOW.time((secs * 1_000_000_000.0) as i64);
-    let _ = DispatchQueue::main().after(when, f);
-}
-
-/// Run `f` on a background thread, then `then` with its result on the main queue.
-pub fn background<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static, then: impl FnOnce(T) + Send + 'static) {
-    std::thread::spawn(move || {
-        let result = f();
-        main_async(move || then(result));
-    });
+    let _ = dispatch2::DispatchQueue::main().after(when, f);
 }
 
 pub fn home() -> PathBuf {
