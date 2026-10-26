@@ -42,7 +42,7 @@ While connected, a watchdog checks the handshake every 15 seconds. With a 25-sec
 
 | Topic | Decision | Why |
 |---|---|---|
-| WireGuard engine | [GotaTun](https://github.com/mullvad/gotatun) 0.10 (`default-features = false`, features `device` and `ring`) | Mullvad's audited Rust fork of BoringTun |
+| WireGuard engine | [GotaTun](https://github.com/mullvad/gotatun) 0.10 (`default-features = false`, features `device` and `ring`) | Mullvad's Rust fork of BoringTun |
 | Tunnel device | Kivuko's own `IpSend`/`IpRecv` adapter on the utun file descriptor (`provider/src/utun.rs`), using tokio's `AsyncFd` and adding or stripping macOS's 4-byte protocol header | The tun crate can't read the MTU of a borrowed descriptor, so its `TunDevice` fails |
 | Finding the utun | Scan the open descriptors for the socket whose control ID is `com.apple.net.utun_control` | The same method as [wireguard-apple](https://github.com/WireGuard/wireguard-apple) |
 | App extension, not system extension | A packet-tunnel app extension inside the app | A development-signed app extension needs no notarization or Developer ID profile; a system extension does |
