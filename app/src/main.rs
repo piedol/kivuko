@@ -13,8 +13,6 @@ mod vpn;
 compile_error!("Kivuko is built for Apple silicon Macs.");
 
 fn main() {
-    let _ = oslog::OsLogger::new(shared::ids::LOG_SUBSYSTEM)
-        .level_filter(log::LevelFilter::Info)
-        .init();
+    let _ = oslog::OsLogger::new(shared::ids::LOG_SUBSYSTEM).level_filter(log::LevelFilter::Info).init();
     app::run();
 }

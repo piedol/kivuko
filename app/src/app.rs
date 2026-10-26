@@ -7,8 +7,8 @@ use objc2::rc::Retained;
 use objc2::{MainThreadMarker, MainThreadOnly, sel};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSApplicationActivationPolicy, NSColor,
-    NSControlStateValueOff, NSControlStateValueOn, NSMenu, NSMenuItem, NSSecureTextField,
-    NSStatusBar, NSStatusItem, NSVariableStatusItemLength, NSWorkspace,
+    NSControlStateValueOff, NSControlStateValueOn, NSMenu, NSMenuItem, NSSecureTextField, NSStatusBar, NSStatusItem,
+    NSVariableStatusItemLength, NSWorkspace,
 };
 use objc2_foundation::{NSNotificationCenter, NSPoint, NSRect, NSSize, NSString, NSURL};
 use objc2_network_extension::{NEVPNStatus, NEVPNStatusDidChangeNotification};
@@ -376,7 +376,12 @@ fn ask_for_token() {
 
 fn menu_item(mtm: MainThreadMarker, title: &str, tag: isize) -> Retained<NSMenuItem> {
     let item = unsafe {
-        NSMenuItem::initWithTitle_action_keyEquivalent(NSMenuItem::alloc(mtm), &ns(title), Some(sel!(command:)), &NSString::new())
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            NSMenuItem::alloc(mtm),
+            &ns(title),
+            Some(sel!(command:)),
+            &NSString::new(),
+        )
     };
     let target = ui::controller(mtm);
     unsafe { item.setTarget(Some(&target)) };
@@ -658,6 +663,7 @@ pub fn login_item_enabled() -> bool {
 
 pub fn set_login_item(on: bool) -> Result<(), String> {
     let service = unsafe { SMAppService::mainAppService() };
-    let result = if on { unsafe { service.registerAndReturnError() } } else { unsafe { service.unregisterAndReturnError() } };
+    let result =
+        if on { unsafe { service.registerAndReturnError() } } else { unsafe { service.unregisterAndReturnError() } };
     result.map_err(|e| e.localizedDescription().to_string())
 }

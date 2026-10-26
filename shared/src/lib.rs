@@ -88,7 +88,9 @@ pub struct Settings {
 pub enum Request {
     Status,
     /// Replace the stored private key (after the user changes their token).
-    SetKey { key: String },
+    SetKey {
+        key: String,
+    },
 }
 
 /// Extension → app.

@@ -16,9 +16,7 @@ unsafe extern "C" {
 }
 
 fn main() {
-    let _ = oslog::OsLogger::new(shared::ids::LOG_SUBSYSTEM)
-        .level_filter(log::LevelFilter::Info)
-        .init();
+    let _ = oslog::OsLogger::new(shared::ids::LOG_SUBSYSTEM).level_filter(log::LevelFilter::Info).init();
     log::info!("tunnel extension {} starting", env!("CARGO_PKG_VERSION"));
     // Register the class before NetworkExtension looks it up by name.
     let _ = provider::TunnelProvider::class();

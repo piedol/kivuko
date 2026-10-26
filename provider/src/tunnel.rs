@@ -175,10 +175,7 @@ async fn connect(provider: &Handle, token: Option<String>, settings: &Settings) 
                 store.private_key.clone().ok_or(format!("Couldn't get your WireGuard key: {e}."))?
             }
         },
-        None => store
-            .private_key
-            .clone()
-            .ok_or("No WireGuard key yet. Open Kivuko and click Connect.")?,
+        None => store.private_key.clone().ok_or("No WireGuard key yet. Open Kivuko and click Connect.")?,
     };
     let secret = StaticSecret::from(decode_key(&key)?);
     let servers = pick_servers(settings, &mut store).await?;
@@ -214,7 +211,8 @@ enum KeyError {
 
 /// The account's NordLynx key, fetched with the access token.
 async fn fetch_key(token: String) -> Result<String, KeyError> {
-    let result = tokio::task::spawn_blocking(move || nord::Client::new(Duration::from_secs(10)).private_key(&token)).await;
+    let result =
+        tokio::task::spawn_blocking(move || nord::Client::new(Duration::from_secs(10)).private_key(&token)).await;
     match result {
         Ok(Ok(key)) => Ok(key),
         Ok(Err(nord::Error::Unauthorized)) => Err(KeyError::Rejected),
@@ -226,7 +224,9 @@ async fn fetch_key(token: String) -> Result<String, KeyError> {
 /// Fresh recommendations when Nord's API answers; the last good list when it doesn't.
 async fn pick_servers(settings: &Settings, store: &mut crate::store::Store) -> Result<Vec<nord::Server>, String> {
     let country = settings.country_id;
-    let fresh = tokio::task::spawn_blocking(move || nord::Client::new(Duration::from_secs(8)).recommendations(country, 5)).await;
+    let fresh =
+        tokio::task::spawn_blocking(move || nord::Client::new(Duration::from_secs(8)).recommendations(country, 5))
+            .await;
     match fresh {
         Ok(Ok(list)) => {
             store.servers = list.clone();
@@ -238,12 +238,8 @@ async fn pick_servers(settings: &Settings, store: &mut crate::store::Store) -> R
                 Ok(Err(e)) => e.to_string(),
                 _ => "lookup failed".into(),
             };
-            let cached: Vec<_> = store
-                .servers
-                .iter()
-                .filter(|s| country.is_none_or(|id| s.country_id == id))
-                .cloned()
-                .collect();
+            let cached: Vec<_> =
+                store.servers.iter().filter(|s| country.is_none_or(|id| s.country_id == id)).cloned().collect();
             if cached.is_empty() {
                 Err(format!("Couldn't pick a server: {why}."))
             } else {

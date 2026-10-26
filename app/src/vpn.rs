@@ -164,7 +164,10 @@ pub fn request_status(then: fn(Status)) {
     }
     let handler = RcBlock::new(move |data: *mut NSData| {
         let status = unsafe { data.as_ref() }.and_then(|d| shared::decode::<Status>(&d.to_vec()));
-        log::info!("tunnel answered the status request: {}", status.as_ref().and_then(|s| s.hostname.as_deref()).unwrap_or("no server"));
+        log::info!(
+            "tunnel answered the status request: {}",
+            status.as_ref().and_then(|s| s.hostname.as_deref()).unwrap_or("no server")
+        );
         if let Some(status) = status {
             dispatch2::DispatchQueue::main().exec_async(move || then(status));
         }

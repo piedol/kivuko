@@ -18,7 +18,8 @@ pub fn list() -> Vec<nord::Country> {
 /// Load the cache now; fetch a fresh list in the background when it's old or missing.
 pub fn refresh_async() {
     let path = cache();
-    if let Some(cached) = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice::<Vec<nord::Country>>(&b).ok()) {
+    if let Some(cached) = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice::<Vec<nord::Country>>(&b).ok())
+    {
         *LIST.lock().unwrap() = cached;
     }
     let fresh = std::fs::metadata(&path)

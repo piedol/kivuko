@@ -150,10 +150,7 @@ impl Client {
 
 /// A WireGuard key is 32 bytes, base64-encoded (44 characters ending in '=').
 pub fn is_wireguard_key(s: &str) -> bool {
-    s.len() == 44
-        && base64::engine::general_purpose::STANDARD
-            .decode(s)
-            .is_ok_and(|b| b.len() == 32)
+    s.len() == 44 && base64::engine::general_purpose::STANDARD.decode(s).is_ok_and(|b| b.len() == 32)
 }
 
 /// Catches an obviously wrong paste (empty, a few characters, spaces). Nord's API is the
@@ -198,12 +195,7 @@ fn parse_server(s: &serde_json::Value) -> Option<Server> {
         country: country.get("name")?.as_str()?.to_string(),
         country_code: country.get("code").and_then(|c| c.as_str()).unwrap_or_default().to_string(),
         country_id: country.get("id").and_then(|c| c.as_u64()).unwrap_or(0) as u32,
-        city: country
-            .get("city")
-            .and_then(|c| c.get("name"))
-            .and_then(|n| n.as_str())
-            .unwrap_or_default()
-            .to_string(),
+        city: country.get("city").and_then(|c| c.get("name")).and_then(|n| n.as_str()).unwrap_or_default().to_string(),
         public_key,
     })
 }

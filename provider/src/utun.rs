@@ -118,10 +118,7 @@ impl IpRecv for Utun {
             return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "short read from utun"));
         }
         packet.truncate(n - header.len());
-        packet
-            .try_into_ip()
-            .map(std::iter::once)
-            .map_err(|e| io::Error::other(e.to_string()))
+        packet.try_into_ip().map(std::iter::once).map_err(|e| io::Error::other(e.to_string()))
     }
 
     fn mtu(&self) -> MtuWatcher {
@@ -147,7 +144,7 @@ mod tests {
         let mut a = Utun::new(fds[0], 1420).unwrap();
         let mut b = Utun::new(fds[1], 1420).unwrap();
         // A minimal IPv4 header: version 4, IHL 5, total length 20.
-        let mut ip = vec![0u8; 20];
+        let mut ip = [0u8; 20];
         ip[0] = 0x45;
         ip[3] = 20;
         ip[8] = 64;
