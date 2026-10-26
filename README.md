@@ -45,6 +45,7 @@ Kivuko.app                     Rust (objc2): the menu-bar app
 - **It picks a server from Nord's recommendations.** It then hands macOS the addresses, routes and DNS, and runs [GotaTun](https://github.com/mullvad/gotatun), Mullvad's audited Rust WireGuard, on the tunnel interface macOS creates.
 - **Nothing leaks.** IPv6 goes into the tunnel too, so it can't leak around it.
 
+See [docs/architecture.md](docs/architecture.md) for the design decisions and the verification results.
 
 ## Your credentials
 
@@ -55,7 +56,7 @@ Kivuko.app                     Rust (objc2): the menu-bar app
 
 ## Setup
 
-Kivuko is a personal build, signed for development with the owner's Apple developer account.
+You build Kivuko yourself and sign it for development with your own Apple developer account. The one-time steps (team and bundle IDs, Xcode sign-in, build, token, allowing the VPN configuration) are in [docs/setup.md](docs/setup.md).
 
 ```bash
 scripts/bundle.sh --install   # build, sign for this Mac, install to /Applications and open
