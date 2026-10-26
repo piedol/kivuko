@@ -8,6 +8,8 @@ import zlib
 
 let appName = "Kivuko"
 let violet = RGB(r: 0.72, g: 0.55, b: 1.0)
+/// The menu's size in pixels while docs/images/menu.png is missing. With a capture, the layout
+/// uses its real size, which depends on the longest item.
 let menu = CGSize(width: 566, height: 566)
 /// NordVPN is the service Kivuko connects to; the images say it isn't Nord's own app.
 let disclaimer = "Unofficial client. Not affiliated with Nord Security."
@@ -318,7 +320,8 @@ func encodePNG(_ ctx: CGContext, opaque: Bool) -> Data {
 do {
     let (W, H): (CGFloat, CGFloat) = (2400, 1480)
     let s: CGFloat = 1
-    let m = CGSize(width: menu.width * s, height: menu.height * s)
+    let real = image("docs/images/menu.png").map(pixels) ?? menu
+    let m = CGSize(width: real.width * s, height: real.height * s)
     let lines = ["A tiny NordVPN client", "for your menu bar"]
     let icon: CGFloat = 200, gap: CGFloat = 220
     let top = (H - m.height) / 2
@@ -339,7 +342,8 @@ do {
 // Everything that matters stays inside x 96…1184, y 56…584, since some sites crop the edges.
 do {
     let s: CGFloat = 0.8
-    let m = CGSize(width: menu.width * s, height: menu.height * s)
+    let real = image("docs/images/menu.png").map(pixels) ?? menu
+    let m = CGSize(width: real.width * s, height: real.height * s)
     let cx: CGFloat = 1184 - 30 - m.width / 2
     let top = (640 - m.height) / 2
     let c = Canvas(1280, 640, corner: 0, accent: violet,

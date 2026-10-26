@@ -598,6 +598,7 @@ fn location_menu(mtm: MainThreadMarker, p: &prefs::Prefs) -> Retained<NSMenu> {
     sub.addItem(&NSMenuItem::separatorItem(mtm));
     sub.addItem(&NSMenuItem::sectionHeaderWithTitle(&ns("All Countries"), mtm));
     if all.is_empty() {
+        countries::refresh_async();
         let i = menu_item(mtm, "Loading countries…", 0);
         i.setEnabled(false);
         sub.addItem(&i);
