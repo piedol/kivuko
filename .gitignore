@@ -3,3 +3,4 @@
 .DS_Store
 /signing/build/
 /signing/*.xcodeproj/
+/signing/local.env

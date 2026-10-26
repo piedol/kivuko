@@ -5,13 +5,16 @@ use serde::{Deserialize, Serialize};
 
 /// Bundle identifiers and names. A rename starts here and in scripts/bundle.sh.
 /// Kivuko is Swahili for a crossing or ferry.
+///
+/// The bundle IDs depend on who signs the build, so scripts/bundle.sh passes them to cargo
+/// as `KIVUKO_APP_ID` and `KIVUKO_EXT_ID` (from `KIVUKO_BUNDLE_PREFIX`). A plain
+/// `cargo build` or `cargo test` gets the `com.example` placeholders below.
 pub mod ids {
-    pub const TEAM: &str = "ABCDE12345";
     pub const APP_NAME: &str = "Kivuko";
-    pub const APP_BUNDLE: &str = "top.piedol.kivuko";
-    pub const PROVIDER_BUNDLE: &str = "top.piedol.kivuko.tunnel";
+    pub const APP_BUNDLE: &str = or(option_env!("KIVUKO_APP_ID"), "com.example.kivuko");
+    pub const PROVIDER_BUNDLE: &str = or(option_env!("KIVUKO_EXT_ID"), "com.example.kivuko.tunnel");
     /// Unified-log subsystem for both processes.
-    pub const LOG_SUBSYSTEM: &str = "top.piedol.kivuko";
+    pub const LOG_SUBSYSTEM: &str = APP_BUNDLE;
     /// The Nord access token's item in the login keychain. The app creates it, so macOS
     /// never asks whether the app may read it. The tunnel never reads it: the app hands the
     /// token over when you click Connect. (On macOS, VPN apps and extensions are pointed
@@ -20,6 +23,13 @@ pub mod ids {
     pub const KEYCHAIN_ACCOUNT: &str = "NordVPN token";
     /// The description macOS shows in System Settings › VPN.
     pub const VPN_DESCRIPTION: &str = "Kivuko";
+
+    const fn or(value: Option<&'static str>, placeholder: &'static str) -> &'static str {
+        match value {
+            Some(v) => v,
+            None => placeholder,
+        }
+    }
 }
 
 /// Tunnel addressing. NordLynx hands every client 10.5.0.2; IPv6 gets a private address so
@@ -117,6 +127,13 @@ pub fn decode<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Option<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tunnel_id_sits_under_the_app_id() {
+        // macOS only accepts an app extension whose bundle ID extends its app's.
+        let rest = ids::PROVIDER_BUNDLE.strip_prefix(ids::APP_BUNDLE);
+        assert!(rest.is_some_and(|r| r.len() > 1 && r.starts_with('.')), "{}", ids::PROVIDER_BUNDLE);
+    }
 
     #[test]
     fn messages_round_trip() {

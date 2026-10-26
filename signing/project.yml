@@ -1,13 +1,16 @@
 # A stub Xcode project whose only job is development signing: building it with
 # -allowProvisioningUpdates makes Xcode register this Mac and the two bundle IDs in the
 # developer account and download development provisioning profiles. scripts/bundle.sh then
-# signs the real (Rust) app with those profiles. Regenerate with: xcodegen -s signing/project.yml
+# signs the real (Rust) app with those profiles.
+#
+# XcodeGen fills ${...} from the environment. scripts/bundle.sh sets KIVUKO_TEAM,
+# KIVUKO_APP_ID and KIVUKO_EXT_ID before it runs xcodegen -s signing/project.yml.
 name: KivukoSigning
 options:
   createIntermediateGroups: true
 settings:
   base:
-    DEVELOPMENT_TEAM: ABCDE12345
+    DEVELOPMENT_TEAM: ${KIVUKO_TEAM}
     CODE_SIGN_STYLE: Automatic
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     SWIFT_VERSION: "5.0"
@@ -21,7 +24,7 @@ targets:
       - target: KivukoTunnel
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: top.piedol.kivuko
+        PRODUCT_BUNDLE_IDENTIFIER: ${KIVUKO_APP_ID}
         PRODUCT_NAME: Kivuko
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_ENTITLEMENTS: App/App.entitlements
@@ -31,7 +34,7 @@ targets:
     sources: [Tunnel]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: top.piedol.kivuko.tunnel
+        PRODUCT_BUNDLE_IDENTIFIER: ${KIVUKO_EXT_ID}
         PRODUCT_NAME: KivukoTunnel
         INFOPLIST_FILE: Tunnel/Info.plist
         CODE_SIGN_ENTITLEMENTS: Tunnel/Tunnel.entitlements
