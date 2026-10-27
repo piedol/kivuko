@@ -30,6 +30,10 @@ pub struct Prefs {
     /// starts the system extension, not a development build's app extension.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub saved_for_system_extension: bool,
+    /// Ask GitHub once a day whether there's a new version (release builds only).
+    pub check_updates: bool,
+    /// When the last update check got an answer, in seconds since 1970. 0 = never.
+    pub last_update_check: u64,
 }
 
 impl Default for Prefs {
@@ -41,6 +45,8 @@ impl Default for Prefs {
             country: None,
             recent: Vec::new(),
             saved_for_system_extension: false,
+            check_updates: true,
+            last_update_check: 0,
         }
     }
 }
@@ -121,6 +127,8 @@ mod tests {
         assert!(p.kill_switch && p.auto_connect);
         assert_eq!(p.dns, Dns::BlockAds);
         assert!(!p.saved_for_system_extension);
+        assert!(p.check_updates);
+        assert_eq!(p.last_update_check, 0);
     }
 
     #[test]

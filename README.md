@@ -47,6 +47,7 @@ Its tunnel runs [GotaTun](https://github.com/mullvad/gotatun), Mullvad's Rust im
 - **Block Ads and Trackers** uses NordVPN's Threat Protection Lite DNS. With it off, Kivuko uses NordVPN's standard DNS.
 - If a server doesn't answer within 8 seconds, Kivuko tries the next server, up to three. If no WireGuard handshake arrives for 3 minutes, it forces a new handshake, and after 6 minutes macOS restarts the tunnel on a new server (with Auto-Connect on).
 - IPv6 traffic goes into the tunnel, where NordVPN drops it, so it can't leak around the VPN.
+- In the release build, **Check for Updates…** looks for a new version, and with **Check for Updates Automatically** on, Kivuko looks once a day. When a new version is out, a notification says so and the menu shows **Update to Kivuko X.Y.Z…** with the release notes. **Install and Relaunch** turns the VPN off, replaces the app and opens the new version, which connects again if Auto-Connect is on.
 
 ## Requirements
 
@@ -98,6 +99,7 @@ Follow [Uninstalling](docs/setup.md#uninstalling) in order. Deleting the app fir
 | Notarization | None | Notarized and stapled |
 | Output | `dist/Kivuko.app` | `dist/Kivuko-macOS-arm64.zip` |
 | Runs from | Any folder | /Applications. On the first launch, macOS asks you to allow the tunnel in System Settings › General › Login Items & Extensions |
+| Updates | Build and install it again | **Check for Updates…** in the menu, and a daily check |
 
 The release build also needs a notarytool keychain profile. Create it with `xcrun notarytool store-credentials`, and set its name in `KIVUKO_NOTARY_PROFILE` (the default is `piedol-notary`).
 
@@ -127,7 +129,8 @@ Kivuko.app                              app/       menu bar app: menu, token pro
 - The tunnel keeps the WireGuard key in its own sandbox container, readable only by your user (mode 0600).
 - Any user on the Mac can read macOS's VPN configuration, so Kivuko stores only your country and DNS choice there.
 - The logs record events, never the token or the key.
-- Kivuko talks only to NordVPN's API and the VPN server you're connected to, and sends no analytics.
+- Kivuko talks to NordVPN's API and the VPN server you're connected to, and sends no analytics. The release build also checks GitHub once a day for a new version. Turn off **Check for Updates Automatically** in the menu to stop it.
+- An update installs only if the download matches the checksum GitHub lists for it and the app inside is signed by Kivuko's developer, carries Kivuko's bundle ID and is notarized by Apple.
 
 [docs/setup.md](docs/setup.md#what-kivuko-stores) lists every file Kivuko writes.
 
@@ -144,7 +147,7 @@ Measured on a MacBook Pro with macOS 26:
 
 | Path | What it does |
 |---|---|
-| `app/` | The menu, Connect and Disconnect, Location, toggles, the token prompt and the VPN configuration |
+| `app/` | The menu, Connect and Disconnect, Location, toggles, the token prompt, the VPN configuration and the release build's updates |
 | `provider/` | The tunnel: server choice, network settings, GotaTun on the utun interface, the watchdog |
 | `nord/` | The NordVPN API client: server recommendations, countries and the NordLynx key |
 | `shared/` | Bundle IDs, settings and the messages between the app and the tunnel |

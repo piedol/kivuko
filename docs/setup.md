@@ -103,8 +103,9 @@ Use `log show` with the same predicate and `--last 1h --info` for earlier messag
 |---|---|
 | NordVPN access token | Login keychain, service `Kivuko`, account `NordVPN token` |
 | WireGuard private key and the last good server list | `~/Library/Containers/<prefix>.kivuko.tunnel/Data/Library/Application Support/state.json`, the tunnel's sandbox container, readable only by you (mode 0600) |
-| Kill Switch, Auto-Connect, DNS and location choices | `~/Library/Application Support/Kivuko/settings.json`, written the first time you change a setting |
+| Kill Switch, Auto-Connect, DNS, location and update-check choices, and the time of the last update check | `~/Library/Application Support/Kivuko/settings.json`, written the first time you change a setting or Kivuko checks for updates |
 | Nord's country list | `~/Library/Caches/Kivuko/countries.json`, refreshed weekly |
+| An update's download (release build) | `~/Library/Caches/Kivuko/Updates`, removed when the install finishes or fails |
 | The VPN configuration | macOS's own store (System Settings › VPN). It holds the country and DNS choice and nothing secret, because every user on the Mac can read it |
 
 ## Uninstalling

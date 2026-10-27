@@ -8,6 +8,10 @@ mod extension;
 mod keychain;
 mod prefs;
 mod ui;
+// Shared by piedol's Mac apps and copied as it is, so it keeps their formatting.
+#[rustfmt::skip]
+mod update;
+mod update_ui;
 mod util;
 mod vpn;
 

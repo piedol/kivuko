@@ -18,7 +18,7 @@ Kivuko.app                                         app/       the same, plus the
 
 | Crate | What it does |
 |---|---|
-| `app/` | Menu, Connect and Disconnect, Location, toggles, token prompt, the VPN configuration macOS stores |
+| `app/` | Menu, Connect and Disconnect, Location, toggles, token prompt, the VPN configuration macOS stores, updates in the release build |
 | `provider/` | The tunnel: server choice, network settings, GotaTun on the utun, watchdog |
 | `nord/` | NordVPN API client: server recommendations, countries, the NordLynx key |
 | `shared/` | Bundle IDs, settings and the messages between the app and the tunnel |
@@ -45,6 +45,18 @@ In the release build (the cargo feature `sysext` on `app` and `provider`), the a
 5. The first time a release build finds a VPN configuration, it saves the configuration again, so it points at the system extension. The tunnel has the same bundle ID in both builds, so the settings don't change. The app records this as `saved_for_system_extension` in its settings file.
 
 A Connect that comes before the tunnel is active, such as Auto-Connect at launch, waits and runs when activation completes.
+
+## Updates
+
+The release build updates itself from the GitHub releases. The code that checks, downloads and verifies is in `app/src/update/`, which piedol's other Mac apps share. Kivuko's menu items, setting, notification and update window are in `app/src/update_ui.rs`. A development build, or a release build signed with another bundle-ID prefix, has no update menu items, because its signature can't meet the requirement in step 2.
+
+1. About a minute after launch, when the last check was more than a day ago, and then daily, the app asks `api.github.com/repos/piedol/kivuko/releases/latest` for the latest release, unless **Check for Updates Automatically** is off. **Check for Updates…** asks straight away.
+2. **Install and Relaunch** downloads `Kivuko-macOS-arm64.zip` to `~/Library/Caches/Kivuko/Updates` and checks its SHA-256 against the asset's `digest`. It unpacks the zip with `ditto` and checks the app with the Security framework, strictly and including the system extension, against `anchor apple generic and identifier "top.piedol.kivuko" and certificate leaf[subject.OU] = "D9JNQPYFBM" and notarized`. The app in the zip must also be a newer version.
+3. Once no connect, disconnect or save of the VPN configuration is under way, the app turns the VPN off the way Quit does (On-Demand off, then the tunnel stopped) and waits up to 20 seconds for macOS to report it down.
+4. It moves the running app to the Trash, moves the new version into its place and quits. A detached shell opens the new version after the old process has exited.
+5. The new version's activation request finds a tunnel of a different version active, and the delegate replaces it. Auto-Connect then connects, as at any launch.
+
+If the install fails before the app is replaced, the running version stays, and if the update turned the VPN off, it connects again. If your account can't make changes in the app's folder, the release page opens in the browser instead.
 
 ## A connection, step by step
 
@@ -121,7 +133,7 @@ macOS must not have two copies of the development build registered. Their tunnel
 2. It looks for unexpired Developer ID profiles for both bundle IDs that grant `packet-tunnel-provider-systemextension`, and for the app also `com.apple.developer.system-extension.install`. If either is missing, it generates the stub project and archives its `KivukoRelease` scheme, a stub app with a system extension. Archiving signs the stub for development, so Xcode adds the System Extension capability to the app's bundle ID. Exporting the archive with `signing/Release/ExportOptions.plist` (method `developer-id`, automatic signing) and `-allowProvisioningUpdates` makes Xcode create the Developer ID profiles and download them. The script then unregisters and deletes the stub apps.
 3. It signs with the Developer ID Application certificate in the login keychain that the profiles list.
 4. It builds both binaries with the `sysext` feature and `--remap-path-prefix`, which keeps the build machine's paths out of the binaries. It fills `resources/Provider-Release-Info.plist` and the two `*-Release.entitlements`, embeds the profiles, and signs the system extension, then the app, with the hardened runtime and a secure timestamp.
-5. It notarizes the app with `xcrun notarytool submit` and the keychain profile in `KIVUKO_NOTARY_PROFILE` (default `piedol-notary`), staples the ticket, checks it with `stapler validate` and `spctl`, and zips the app as `dist/Kivuko-macOS-arm64.zip`. It doesn't install or open the app.
+5. It notarizes the app with `xcrun notarytool submit` and the keychain profile in `KIVUKO_NOTARY_PROFILE` (default `piedol-notary`), staples the ticket, checks it with `stapler validate` and `spctl`, and zips the app as `dist/Kivuko-macOS-arm64.zip`, the release asset that updates download. It doesn't install or open the app.
 
 When Xcode adds the System Extension capability, it also replaces the app's development profile with a new profile that lists the System Extension entitlement. Development builds don't use that entitlement.
 

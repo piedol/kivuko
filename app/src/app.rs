@@ -2,13 +2,14 @@
 //! save the VPN configuration → fetch the WireGuard key → start the tunnel.
 
 use std::cell::{Cell, RefCell};
+use std::time::{Duration, Instant};
 
 use objc2::rc::Retained;
 use objc2::{MainThreadMarker, MainThreadOnly, sel};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSApplicationActivationPolicy, NSColor,
-    NSControlStateValueOff, NSControlStateValueOn, NSMenu, NSMenuItem, NSSecureTextField, NSStatusBar, NSStatusItem,
-    NSVariableStatusItemLength, NSWorkspace,
+    NSControlStateValueOff, NSControlStateValueOn, NSMenu, NSMenuItem, NSModalResponse, NSSecureTextField, NSStatusBar,
+    NSStatusItem, NSVariableStatusItemLength, NSWorkspace,
 };
 use objc2_foundation::{NSNotificationCenter, NSPoint, NSRect, NSSize, NSString, NSURL};
 use objc2_network_extension::{NEVPNStatus, NEVPNStatusDidChangeNotification};
@@ -18,7 +19,7 @@ use shared::{Dns, Status};
 use crate::extension::{self, State as Tunnel};
 use crate::prefs::{self, Place};
 use crate::util::{self, ns};
-use crate::{countries, keychain, ui, vpn};
+use crate::{countries, keychain, ui, update_ui, vpn};
 
 mod tag {
     pub const CONNECT: isize = 1;
@@ -32,6 +33,9 @@ mod tag {
     pub const TOKEN: isize = 11;
     pub const ALLOW_TUNNEL: isize = 12;
     pub const ACTIVATE_TUNNEL: isize = 13;
+    /// Check for Updates…, Update to Kivuko X…, or the install in progress (release builds).
+    pub const UPDATE: isize = 14;
+    pub const CHECK_UPDATES: isize = 15;
     pub const COUNTRY: isize = 100_000;
 }
 
@@ -66,6 +70,10 @@ thread_local! {
     static CONNECT_WHEN_READY: Cell<bool> = const { Cell::new(false) };
     /// The VPN configuration is being saved again for the system extension.
     static ADOPTING: Cell<bool> = const { Cell::new(false) };
+    /// A modal alert (the token prompt) is open.
+    static MODAL: Cell<bool> = const { Cell::new(false) };
+    /// How far an update has got with turning the VPN off (see `ready_for_update`).
+    static UPDATE_STOP: Cell<UpdateStop> = const { Cell::new(UpdateStop::No) };
 }
 
 pub fn run() {
@@ -128,6 +136,7 @@ pub fn launched(mtm: MainThreadMarker) {
         }
         adopt_configuration();
     });
+    update_ui::launched();
     // `KIVUKO_SHOW_MENU=<seconds>` opens the menu that long after launch, for README
     // screenshots.
     if let Some(delay) = std::env::var("KIVUKO_SHOW_MENU").ok().map(|v| v.parse::<f64>().unwrap_or(6.0)) {
@@ -340,7 +349,7 @@ fn disconnect(then: impl FnOnce() + 'static) {
 }
 
 /// Quit turns the VPN off too.
-fn quit() {
+pub fn quit() {
     let terminate = || ui::app(mtm()).terminate(None);
     let active = !matches!(vpn::status(), NEVPNStatus::Disconnected | NEVPNStatus::Invalid);
     if vpn::exists() && (active || vpn::on_demand()) {
@@ -375,6 +384,14 @@ fn open_url(url: &str) {
     }
 }
 
+/// Run a modal alert. An update doesn't replace the app while one is open.
+fn run_modal(alert: &NSAlert) -> NSModalResponse {
+    MODAL.with(|m| m.set(true));
+    let response = alert.runModal();
+    MODAL.with(|m| m.set(false));
+    response
+}
+
 /// Ask for the Nord access token and save it in the login keychain.
 fn ask_for_token() {
     let mtm = mtm();
@@ -398,7 +415,7 @@ fn ask_for_token() {
     alert.window().setInitialFirstResponder(Some(&field));
     #[allow(deprecated)]
     ui::app(mtm).activateIgnoringOtherApps(true);
-    let response = alert.runModal();
+    let response = run_modal(&alert);
     if response == NSAlertSecondButtonReturn {
         if !keychain::has_token() {
             set_problem(Some(Problem::NoToken));
@@ -414,7 +431,7 @@ fn ask_for_token() {
         let oops = NSAlert::new(mtm);
         oops.setMessageText(&ns("That doesn't look like a NordVPN token"));
         oops.setInformativeText(&ns("Copy the whole access token from Nord Account and paste it in, with no spaces."));
-        oops.runModal();
+        run_modal(&oops);
         return ask_for_token();
     }
     if let Err(e) = keychain::set_token(&token) {
@@ -650,6 +667,20 @@ fn build_menu(menu: &NSMenu) {
 
     menu.addItem(&NSMenuItem::separatorItem(mtm));
     menu.addItem(&toggle(mtm, "Launch at Login", tag::LOGIN, login_item_enabled(), "Start Kivuko when you log in."));
+    if update_ui::offered() {
+        menu.addItem(&toggle(
+            mtm,
+            "Check for Updates Automatically",
+            tag::CHECK_UPDATES,
+            p.check_updates,
+            "Once a day, Kivuko asks GitHub whether there's a newer version.",
+        ));
+        let (title, subtitle, enabled) = update_ui::menu_item();
+        let update = menu_item(mtm, &title, tag::UPDATE);
+        update.setSubtitle(subtitle.map(|s| ns(&s)).as_deref());
+        update.setEnabled(enabled);
+        menu.addItem(&update);
+    }
     let quit = menu_item(mtm, "Quit Kivuko", tag::QUIT);
     quit.setKeyEquivalent(&ns("q"));
     quit.setToolTip(Some(&ns("Turns the VPN off and quits.")));
@@ -723,6 +754,11 @@ pub fn handle_tag(t: isize) {
             refresh();
         }
         tag::QUIT => quit(),
+        tag::UPDATE => update_ui::menu_chosen(),
+        tag::CHECK_UPDATES => {
+            prefs::update(|p| p.check_updates = !p.check_updates);
+            update_ui::setting_changed();
+        }
         tag::TOKEN => ask_for_token(),
         tag::ALLOW_TUNNEL => open_url(extension::approval_pane().0),
         tag::ACTIVATE_TUNNEL => {
@@ -744,6 +780,85 @@ pub fn handle_tag(t: isize) {
     }
 }
 
+// ---------------------------------------------------------------- updates
+
+/// How far an update has got with turning the VPN off.
+#[derive(Clone, Copy, PartialEq)]
+enum UpdateStop {
+    No,
+    /// Turning On-Demand off, since then.
+    Asked(Instant),
+    /// The tunnel was told to stop.
+    Sent(Instant),
+}
+
+/// How long an update waits for the VPN to go off before it carries on anyway.
+const UPDATE_STOP_WAIT: Duration = Duration::from_secs(20);
+
+/// Nothing is half done that quitting would cut short: no connect, disconnect, reconnect or
+/// save of the VPN configuration under way, the tunnel's activation settled, and no prompt open.
+fn is_idle() -> bool {
+    let changing = matches!(vpn::status(), NEVPNStatus::Connecting | NEVPNStatus::Disconnecting);
+    let pending = [&LAUNCH_CHECK, &RECONNECT, &ADOPTING, &MODAL].iter().any(|flag| flag.with(Cell::get));
+    !changing && !pending && !vpn::saving() && extension::state() != Tunnel::Activating
+}
+
+/// What an update does next, in `ready_for_update`.
+#[derive(Debug, PartialEq)]
+enum UpdateNext {
+    Wait,
+    StopVpn,
+    Replace,
+}
+
+/// The decision behind `ready_for_update`, from what it has done so far and where Kivuko and
+/// the VPN stand: idle, a VPN configuration exists, the VPN is down, On-Demand is on.
+fn update_next(stop: UpdateStop, idle: bool, configured: bool, down: bool, on_demand: bool) -> UpdateNext {
+    let waited = |since: Instant| since.elapsed() > UPDATE_STOP_WAIT;
+    match stop {
+        UpdateStop::Sent(since) if down || waited(since) => UpdateNext::Replace,
+        UpdateStop::Asked(since) if waited(since) => UpdateNext::Replace,
+        UpdateStop::Sent(_) | UpdateStop::Asked(_) => UpdateNext::Wait,
+        UpdateStop::No if !idle => UpdateNext::Wait,
+        UpdateStop::No if !configured || (down && !on_demand) => UpdateNext::Replace,
+        UpdateStop::No => UpdateNext::StopVpn,
+    }
+}
+
+/// An update asks this every second, once the download has passed its checks, until it
+/// answers yes; then it replaces the app and quits it. Yes means Kivuko is idle and the VPN is
+/// off. The first time the VPN is on (or On-Demand is armed), this turns it off the way Quit
+/// does, so the new version's tunnel doesn't replace one that's carrying traffic, and the new
+/// version's Auto-Connect finds it off and connects again.
+pub fn ready_for_update() -> bool {
+    let down = matches!(vpn::status(), NEVPNStatus::Disconnected | NEVPNStatus::Invalid);
+    let stop = UPDATE_STOP.with(Cell::get);
+    match update_next(stop, is_idle(), vpn::exists(), down, vpn::on_demand()) {
+        UpdateNext::Wait => false,
+        UpdateNext::Replace => true,
+        UpdateNext::StopVpn => {
+            log::info!("turning the VPN off for the update");
+            let since = Instant::now();
+            UPDATE_STOP.with(|s| s.set(UpdateStop::Asked(since)));
+            disconnect(move || UPDATE_STOP.with(|s| s.set(UpdateStop::Sent(since))));
+            false
+        }
+    }
+}
+
+/// Whether an update is turning the VPN off.
+pub fn stopping_for_update() -> bool {
+    UPDATE_STOP.with(Cell::get) != UpdateStop::No
+}
+
+/// The update failed after `ready_for_update` turned the VPN off: turn it on again.
+pub fn update_not_installed() {
+    if UPDATE_STOP.with(|s| s.replace(UpdateStop::No)) != UpdateStop::No {
+        log::info!("the update wasn't installed; connecting again");
+        connect();
+    }
+}
+
 pub fn login_item_enabled() -> bool {
     let status = unsafe { SMAppService::mainAppService().status() };
     status == SMAppServiceStatus::Enabled
@@ -754,4 +869,35 @@ pub fn set_login_item(on: bool) -> Result<(), String> {
     let result =
         if on { unsafe { service.registerAndReturnError() } } else { unsafe { service.unregisterAndReturnError() } };
     result.map_err(|e| e.localizedDescription().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_update_turns_the_vpn_off_before_it_replaces_the_app() {
+        use UpdateNext::*;
+        // Busy (connecting, saving, a prompt open): wait.
+        assert_eq!(update_next(UpdateStop::No, false, true, true, false), Wait);
+        // No VPN set up, or already off with On-Demand off: nothing to turn off.
+        assert_eq!(update_next(UpdateStop::No, true, false, false, true), Replace);
+        assert_eq!(update_next(UpdateStop::No, true, true, true, false), Replace);
+        // Connected, or off with On-Demand armed: turn it off first.
+        assert_eq!(update_next(UpdateStop::No, true, true, false, true), StopVpn);
+        assert_eq!(update_next(UpdateStop::No, true, true, true, true), StopVpn);
+        // Turning On-Demand off, or the tunnel still stopping: wait, even while busy.
+        let now = Instant::now();
+        assert_eq!(update_next(UpdateStop::Asked(now), false, true, true, false), Wait);
+        assert_eq!(update_next(UpdateStop::Sent(now), false, true, false, false), Wait);
+        // Down: replace.
+        assert_eq!(update_next(UpdateStop::Sent(now), false, true, true, false), Replace);
+    }
+
+    #[test]
+    fn an_update_stops_waiting_for_the_vpn_after_a_while() {
+        let Some(long_ago) = Instant::now().checked_sub(UPDATE_STOP_WAIT + Duration::from_secs(1)) else { return };
+        assert_eq!(update_next(UpdateStop::Asked(long_ago), false, true, false, true), UpdateNext::Replace);
+        assert_eq!(update_next(UpdateStop::Sent(long_ago), false, true, false, false), UpdateNext::Replace);
+    }
 }

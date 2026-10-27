@@ -22,6 +22,7 @@ objc2-network-extension = "0.3.2"
 objc2-service-management = "0.3.2"
 objc2-security = "0.3.2"
 objc2-system-extensions = "0.3.2"
+objc2-user-notifications = { version = "0.3.2", default-features = false, features = ["std", "block2", "bitflags", "UNNotification", "UNNotificationAction", "UNNotificationCategory", "UNNotificationContent", "UNNotificationRequest", "UNNotificationResponse", "UNNotificationSettings", "UNNotificationTrigger", "UNUserNotificationCenter"] }
 block2 = "0.6.2"
 dispatch2 = "0.3.1"
 oslog = "0.2"

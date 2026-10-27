@@ -1,7 +1,7 @@
 //! The VPN configuration macOS keeps for us (System Settings › VPN), and the connection to
 //! the tunnel. Everything here runs on the main thread.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use block2::RcBlock;
 use objc2::rc::Retained;
@@ -18,10 +18,26 @@ use crate::util::{ns, once};
 
 thread_local! {
     static MANAGER: RefCell<Option<Retained<NETunnelProviderManager>>> = const { RefCell::new(None) };
+    /// Saves of the configuration under way.
+    static SAVING: Cell<u32> = const { Cell::new(0) };
 }
 
 fn manager() -> Option<Retained<NETunnelProviderManager>> {
     MANAGER.with(|m| m.borrow().clone())
+}
+
+/// Whether a save of the configuration is under way. An update doesn't quit during one.
+pub fn saving() -> bool {
+    SAVING.with(Cell::get) > 0
+}
+
+/// Count a save as under way until `then` gets its result.
+fn counted<T>(then: impl FnOnce(T) + 'static) -> impl FnOnce(T) + 'static {
+    SAVING.with(|s| s.set(s.get() + 1));
+    move |result| {
+        SAVING.with(|s| s.set(s.get().saturating_sub(1)));
+        then(result)
+    }
 }
 
 fn error_text(err: *mut NSError) -> Option<String> {
@@ -73,6 +89,7 @@ pub fn connected_secs() -> Option<u64> {
 /// Create or update the configuration from the preferences, with On-Demand on or off, and
 /// save it. macOS asks the user to allow a VPN configuration the first time.
 pub fn save(prefs: &Prefs, on_demand: bool, then: impl FnOnce(Result<(), String>) + 'static) {
+    let then = counted(then);
     let m = manager().unwrap_or_else(|| unsafe { NETunnelProviderManager::new() });
     unsafe {
         let proto = NETunnelProviderProtocol::new();
@@ -127,11 +144,12 @@ pub fn set_on_demand(on: bool, then: impl FnOnce() + 'static) {
         return then();
     }
     unsafe { m.setOnDemandEnabled(on) };
+    let then = counted(move |()| then());
     let done = RcBlock::new(once(move |err: *mut NSError| {
         if let Some(e) = error_text(err) {
             log::error!("couldn't change On-Demand: {e}");
         }
-        then();
+        then(());
     }));
     unsafe { m.saveToPreferencesWithCompletionHandler(Some(&done)) };
 }
