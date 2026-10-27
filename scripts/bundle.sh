@@ -1,10 +1,15 @@
 #!/bin/zsh
-# Build Kivuko.app (menu-bar app + VPN app extension) and sign it for this Mac.
-#   scripts/bundle.sh             build + sign into dist/Kivuko.app
+# Build Kivuko.app (menu-bar app + VPN tunnel) and sign it.
+#   scripts/bundle.sh             development build: the tunnel is an app extension, signed for
+#                                 this Mac with Apple Development, into dist/Kivuko.app
 #   scripts/bundle.sh --install   also copy to /Applications and open it
+#   scripts/bundle.sh --release   Developer ID build: the tunnel is a system extension. Signed,
+#                                 notarized and stapled into dist/Kivuko.app, and zipped as
+#                                 dist/Kivuko-macOS-arm64.zip. Nothing is installed or opened.
 #   scripts/bundle.sh --check     print the team and bundle IDs, write the Info.plists and
 #                                 entitlements to dist/check/ and stop: nothing is built,
-#                                 signed or registered, and Xcode isn't run
+#                                 signed or registered, and Xcode isn't run. With --release,
+#                                 the release build's files.
 #
 # Signing needs your Apple team and a bundle-ID prefix you own (bundle IDs are unique
 # across all developer accounts):
@@ -16,21 +21,30 @@
 # Set them in the environment, or once in signing/local.env (git-ignored; copy
 # signing/local.env.example). The environment wins over the file.
 #
-# Kivuko is signed with an Apple Development certificate and development provisioning
-# profiles that cover only the Macs registered in the developer account. No notarization is
-# needed. The profiles come from Xcode's automatic signing (signing/project.yml); this script
-# refreshes them when they're missing or expire.
+# The development build is signed with an Apple Development certificate and development
+# provisioning profiles that cover only the Macs registered in the developer account. No
+# notarization is needed. The profiles come from Xcode's automatic signing
+# (signing/project.yml); this script refreshes them when they're missing or expire.
+#
+# The release build (--release) is signed with a Developer ID Application certificate and
+# Developer ID profiles, which Xcode creates the same way, and notarized with the notarytool
+# keychain profile KIVUKO_NOTARY_PROFILE (default piedol-notary), made once with:
+#   xcrun notarytool store-credentials <profile> --apple-id <Apple ID> --team-id <team ID>
 set -euo pipefail
 cd "${0:A:h}/.."
 
-INSTALL=0 CHECK=0
+INSTALL=0 CHECK=0 RELEASE=0
 for a in "$@"; do
   case $a in
     --install) INSTALL=1 ;;
     --check) CHECK=1 ;;
+    --release) RELEASE=1 ;;
     *) echo "unknown option $a"; exit 2 ;;
   esac
 done
+# Moving from a development build to a release build takes steps in the menu and in System
+# Settings, so the script never installs the release build.
+(( RELEASE && INSTALL )) && { echo "--release doesn't install. Install dist/Kivuko-macOS-arm64.zip by hand."; exit 2; }
 
 # The team of the one Apple Development signing identity in the login keychain. The team ID
 # is the certificate subject's OU; the ID in parentheses after your name is not the team.
@@ -69,10 +83,11 @@ detect_team() {
   esac
 }
 
-team=${KIVUKO_TEAM-} prefix=${KIVUKO_BUNDLE_PREFIX-}
+team=${KIVUKO_TEAM-} prefix=${KIVUKO_BUNDLE_PREFIX-} notary=${KIVUKO_NOTARY_PROFILE-}
 [[ -f signing/local.env ]] && source signing/local.env
 TEAM=${team:-${KIVUKO_TEAM-}}
 PREFIX=${prefix:-${KIVUKO_BUNDLE_PREFIX:-top.piedol}}
+NOTARY_PROFILE=${notary:-${KIVUKO_NOTARY_PROFILE:-piedol-notary}}
 [[ -n $TEAM ]] || detect_team
 [[ $TEAM =~ '^[A-Z0-9]{10}$' ]] || { echo "KIVUKO_TEAM must be a 10-character team ID like ABCDE12345, not \"$TEAM\""; exit 1; }
 [[ $PREFIX =~ '^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*$' ]] \
@@ -100,9 +115,15 @@ if (( CHECK )); then
   rm -rf dist/check
   mkdir -p dist/check
   fill resources/Info.plist dist/check/app-Info.plist
-  fill resources/Provider-Info.plist dist/check/tunnel-Info.plist
-  fill resources/App.entitlements dist/check/app.entitlements
-  fill resources/Provider.entitlements dist/check/tunnel.entitlements
+  if (( RELEASE )); then
+    fill resources/Provider-Release-Info.plist dist/check/tunnel-Info.plist
+    fill resources/App-Release.entitlements dist/check/app.entitlements
+    fill resources/Provider-Release.entitlements dist/check/tunnel.entitlements
+  else
+    fill resources/Provider-Info.plist dist/check/tunnel-Info.plist
+    fill resources/App.entitlements dist/check/app.entitlements
+    fill resources/Provider.entitlements dist/check/tunnel.entitlements
+  fi
   echo "Wrote the Info.plists and entitlements to dist/check/. Nothing was built or signed."
   exit 0
 fi
@@ -126,6 +147,117 @@ profile_for() {
   done
   print -r -- "$best"
 }
+
+if (( RELEASE )); then
+  # The newest unexpired Developer ID profile for a bundle ID that grants the system
+  # extension's Network Extension value (and, with a second argument, that entitlement too).
+  devid_profile_for() {
+    local want="$TEAM.$1" also=${2-} best="" best_exp="" p plist id exp
+    for p in "$PROFILES"/*.provisionprofile(N); do
+      plist=$(security cms -D -i "$p" 2>/dev/null) || continue
+      id=$(plutil -extract Entitlements.com\\.apple\\.application-identifier raw - <<<"$plist" 2>/dev/null) || continue
+      [[ $id == "$want" ]] || continue
+      [[ $(plutil -extract ProvisionsAllDevices raw - <<<"$plist" 2>/dev/null) == true ]] || continue   # Developer ID only
+      plutil -extract Entitlements.com\\.apple\\.developer\\.networking\\.networkextension xml1 -o - - <<<"$plist" 2>/dev/null \
+        | grep -q '<string>packet-tunnel-provider-systemextension</string>' || continue
+      [[ -z $also || $(plutil -extract "Entitlements.${also//./\\.}" raw - <<<"$plist" 2>/dev/null) == true ]] || continue
+      exp=$(plutil -extract ExpirationDate raw - <<<"$plist")
+      [[ $exp > $(date -u +%Y-%m-%dT%H:%M:%SZ) ]] || continue
+      [[ -z $best || $exp > $best_exp ]] && { best=$p; best_exp=$exp; }
+    done
+    print -r -- "$best"
+  }
+  # lsregister fails for a bundle it never registered; that's fine here.
+  unregister() { "$LSREGISTER" -u "$1" 2>/dev/null || true; }
+  # Every app the stub build left, unregistered, then the build folder.
+  forget_stub() {
+    local a
+    for a in signing/build/**/*.app(N/); do unregister "$a"; done
+    rm -rf signing/build
+  }
+
+  APP_PROFILE=$(devid_profile_for $APP_ID com.apple.developer.system-extension.install)
+  EXT_PROFILE=$(devid_profile_for $EXT_ID)
+  if [[ -z $APP_PROFILE || -z $EXT_PROFILE ]]; then
+    # Archiving the stub signs it for development, which adds the System Extension capability
+    # to the app's ID. Exporting it for Developer ID makes Xcode create the Developer ID
+    # profiles and download them.
+    echo "Getting Developer ID signing from Xcode…"
+    (cd signing && xcodegen -q -s project.yml \
+      && xcodebuild -project KivukoSigning.xcodeproj -scheme KivukoRelease -configuration Release \
+        -derivedDataPath build/release -archivePath build/release/Kivuko.xcarchive \
+        -allowProvisioningUpdates -allowProvisioningDeviceRegistration archive -quiet \
+      && xcodebuild -exportArchive -archivePath build/release/Kivuko.xcarchive \
+        -exportOptionsPlist Release/ExportOptions.plist -exportPath build/release/export \
+        -allowProvisioningUpdates -quiet) \
+      || { forget_stub; echo "Xcode couldn't create the Developer ID signing. Is Xcode signed in (Settings › Accounts), with a Developer ID Application certificate?"; exit 1; }
+    # Only the profiles were wanted; the stub app must not stay registered.
+    forget_stub
+    APP_PROFILE=$(devid_profile_for $APP_ID com.apple.developer.system-extension.install)
+    EXT_PROFILE=$(devid_profile_for $EXT_ID)
+  fi
+  [[ -n $APP_PROFILE && -n $EXT_PROFILE ]] || { echo "no Developer ID profiles for $APP_ID / $EXT_ID"; exit 1; }
+
+  # The Developer ID Application certificate in the keychain that the profiles were made
+  # for. A profile lists every Developer ID certificate of the team.
+  IDENTITY=""
+  plist=$(security cms -D -i "$APP_PROFILE")
+  identities=$(security find-identity -v -p codesigning)
+  for (( i = 0; i < $(plutil -extract DeveloperCertificates raw - <<<"$plist"); i++ )); do
+    sha=$(plutil -extract DeveloperCertificates.$i raw - <<<"$plist" | base64 -d | shasum -a 1 | cut -d' ' -f1 | tr a-f A-F)
+    if grep "$sha" <<<"$identities" | grep -q '"Developer ID Application: '; then IDENTITY=$sha; break; fi
+  done
+  [[ -n $IDENTITY ]] || { echo "none of the profile's Developer ID certificates is in the keychain"; exit 1; }
+
+  # Keep build-machine paths (home folder, checkout) out of the binaries' panic messages.
+  # The encoded form separates flags with 0x1f, so paths with spaces work.
+  CARGO_ENCODED_RUSTFLAGS="--remap-path-prefix=$HOME/.cargo=/cargo"$'\x1f'"--remap-path-prefix=$PWD=/kivuko" \
+    cargo build --release --target aarch64-apple-darwin -p app -p provider -F app/sysext -F provider/sysext
+  OUT=target/aarch64-apple-darwin/release
+
+  APP=dist/$NAME.app
+  SYSEXT=$APP/Contents/Library/SystemExtensions/$EXT_ID.systemextension
+  [[ -e $APP ]] && unregister "$APP"
+  rm -rf "$APP" dist/tmp "dist/$NAME-macOS-arm64.zip"
+  mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$SYSEXT/Contents/MacOS" dist/tmp
+  cp "$OUT/$NAME" "$APP/Contents/MacOS/$NAME"
+  cp "$OUT/provider" "$SYSEXT/Contents/MacOS/$EXT_ID"
+  fill resources/Info.plist "$APP/Contents/Info.plist"
+  fill resources/Provider-Release-Info.plist "$SYSEXT/Contents/Info.plist"
+  fill resources/App-Release.entitlements dist/tmp/app.entitlements
+  fill resources/Provider-Release.entitlements dist/tmp/provider.entitlements
+  cp "$APP_PROFILE" "$APP/Contents/embedded.provisionprofile"
+  cp "$EXT_PROFILE" "$SYSEXT/Contents/embedded.provisionprofile"
+  [[ -f assets/AppIcon.icns ]] && cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+
+  # Inside out: the system extension, then the app. Notarization needs the hardened runtime
+  # and a secure timestamp.
+  sign() { codesign --force --options runtime --timestamp --sign "$IDENTITY" "$@"; }
+  sign --entitlements dist/tmp/provider.entitlements "$SYSEXT"
+  sign --entitlements dist/tmp/app.entitlements "$APP"
+  codesign --verify --strict --deep "$APP"
+  echo "Built $APP ($(du -sh "$APP" | cut -f1); app $(du -h "$APP/Contents/MacOS/$NAME" | cut -f1), tunnel $(du -h "$SYSEXT/Contents/MacOS/$EXT_ID" | cut -f1))"
+
+  ditto -c -k --keepParent "$APP" dist/tmp/notarize.zip
+  xcrun notarytool submit dist/tmp/notarize.zip --keychain-profile "$NOTARY_PROFILE" --wait 2>&1 | tee dist/tmp/notarize.log
+  if ! grep -q "status: Accepted" dist/tmp/notarize.log; then
+    id=$(sed -n 's/^ *id: //p' dist/tmp/notarize.log | head -1)
+    [[ -n $id ]] && xcrun notarytool log "$id" --keychain-profile "$NOTARY_PROFILE"
+    echo "Notarization failed. dist/tmp/notarize.log has notarytool's output."
+    exit 1
+  fi
+  xcrun stapler staple "$APP"
+  xcrun stapler validate "$APP"
+  spctl -a -vv -t exec "$APP"
+  ditto -c -k --keepParent "$APP" "dist/$NAME-macOS-arm64.zip"
+  rm -rf dist/tmp
+  # dist/Kivuko.app stays for inspection, unregistered: a second registered copy of the app
+  # can confuse macOS about which one is Kivuko.
+  unregister "$APP"
+  echo "Notarized: dist/$NAME-macOS-arm64.zip"
+  echo "Logs: log stream --predicate 'subsystem == \"$APP_ID\"' --level info"
+  exit 0
+fi
 
 APP_PROFILE=$(profile_for $APP_ID)
 EXT_PROFILE=$(profile_for $EXT_ID)

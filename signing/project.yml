@@ -1,7 +1,13 @@
-# A stub Xcode project whose only job is development signing: building it with
-# -allowProvisioningUpdates makes Xcode register this Mac and the two bundle IDs in the
-# developer account and download development provisioning profiles. scripts/bundle.sh then
-# signs the real (Rust) app with those profiles.
+# A stub Xcode project whose only job is getting provisioning profiles. scripts/bundle.sh
+# then signs the real (Rust) app with them.
+#
+# - Kivuko + KivukoTunnel (app extension): building the Kivuko scheme with
+#   -allowProvisioningUpdates makes Xcode register this Mac and the two bundle IDs in the
+#   developer account and download development profiles.
+# - KivukoRelease + KivukoTunnelSystemExtension (system extension): archiving the
+#   KivukoRelease scheme and exporting it with Release/ExportOptions.plist (developer-id,
+#   automatic signing) makes Xcode add the System Extension capability to the app's ID and
+#   download Developer ID profiles. scripts/bundle.sh --release does this.
 #
 # XcodeGen fills ${...} from the environment. scripts/bundle.sh sets KIVUKO_TEAM,
 # KIVUKO_APP_ID and KIVUKO_EXT_ID before it runs xcodegen -s signing/project.yml.
@@ -15,6 +21,8 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     SWIFT_VERSION: "5.0"
     ENABLE_HARDENED_RUNTIME: YES
+    # The app group the system extension's Mach service name starts with.
+    KIVUKO_APP_GROUP: $(TeamIdentifierPrefix)${KIVUKO_APP_ID}
 targets:
   Kivuko:
     type: application
@@ -38,3 +46,26 @@ targets:
         PRODUCT_NAME: KivukoTunnel
         INFOPLIST_FILE: Tunnel/Info.plist
         CODE_SIGN_ENTITLEMENTS: Tunnel/Tunnel.entitlements
+  KivukoRelease:
+    type: application
+    platform: macOS
+    sources: [Release/App]
+    dependencies:
+      - target: KivukoTunnelSystemExtension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ${KIVUKO_APP_ID}
+        PRODUCT_NAME: Kivuko
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_ENTITLEMENTS: Release/App/App.entitlements
+  KivukoTunnelSystemExtension:
+    type: system-extension
+    platform: macOS
+    sources: [Release/Tunnel]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ${KIVUKO_EXT_ID}
+        # Apple names a system extension's bundle after its bundle ID.
+        PRODUCT_NAME: ${KIVUKO_EXT_ID}
+        INFOPLIST_FILE: Release/Tunnel/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Release/Tunnel/Tunnel.entitlements
