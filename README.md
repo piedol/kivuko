@@ -31,6 +31,7 @@ Its tunnel runs [GotaTun](https://github.com/mullvad/gotatun), Mullvad's Rust im
 - [Features](#features)
 - [Requirements](#requirements)
 - [Install](#install) · [Uninstall](#uninstall)
+- [Build from source](#build-from-source)
 - [How it works](#how-it-works)
 - [Privacy and security](#privacy-and-security)
 - [Resource use](#resource-use)
@@ -85,6 +86,27 @@ Development profiles last a year. When they expire, macOS stops loading Kivuko, 
 
 Follow [Uninstalling](docs/setup.md#uninstalling) in order. Deleting the app first can leave the kill switch blocking your connection until you remove the VPN configuration.
 
+## Build from source
+
+`scripts/bundle.sh` builds Kivuko in two ways. Both need Xcode signed in with a paid Apple Developer Program account, XcodeGen and Rust 1.95 or later. On the first run of each, Xcode creates the provisioning profiles by building the stub project in `signing/`.
+
+| | Development build | Release build |
+|---|---|---|
+| Command | `scripts/bundle.sh`, or `scripts/bundle.sh --install` to install it | `scripts/bundle.sh --release` |
+| Tunnel | App extension, `Contents/PlugIns/KivukoTunnel.appex` | System extension, `Contents/Library/SystemExtensions/<prefix>.kivuko.tunnel.systemextension` |
+| Signing | Apple Development certificate and development profiles, valid for the Macs registered in your account | Developer ID Application certificate and Developer ID profiles |
+| Notarization | None | Notarized and stapled |
+| Output | `dist/Kivuko.app` | `dist/Kivuko-macOS-arm64.zip` |
+| Runs from | Any folder | /Applications. On the first launch, macOS asks you to allow the tunnel in System Settings › General › Login Items & Extensions |
+
+The release build also needs a notarytool keychain profile. Create it with `xcrun notarytool store-credentials`, and set its name in `KIVUKO_NOTARY_PROFILE` (the default is `piedol-notary`).
+
+`cargo build` builds the development variant. The `sysext` feature of the `app` and `provider` crates builds the release variant:
+
+```bash
+cargo build --release -F app/sysext -F provider/sysext
+```
+
 ## How it works
 
 ```text
@@ -126,8 +148,8 @@ Measured on a MacBook Pro with macOS 26:
 | `provider/` | The tunnel: server choice, network settings, GotaTun on the utun interface, the watchdog |
 | `nord/` | The NordVPN API client: server recommendations, countries and the NordLynx key |
 | `shared/` | Bundle IDs, settings and the messages between the app and the tunnel |
-| `signing/` | A stub Xcode project used to get development signing |
-| `scripts/bundle.sh` | Build, sign and install |
+| `signing/` | A stub Xcode project that gets the development and Developer ID provisioning profiles |
+| `scripts/bundle.sh` | Build and sign, then install the development build or notarize the release build |
 
 ### Contributing
 
