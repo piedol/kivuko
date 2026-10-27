@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/macOS-14%2B%20·%20Apple%20silicon-1c1c1e?logo=apple" alt="macOS 14 or later on Apple silicon">
-  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-1c1c1e" alt="License: PolyForm Noncommercial 1.0.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-1c1c1e" alt="License: GPL-3.0-or-later"></a>
 </p>
 
 <p align="center">
@@ -149,6 +149,8 @@ cargo test
 
 ## License
 
-Kivuko is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). You may use, change and share it for any noncommercial purpose. Commercial use needs a separate license; open an issue to ask about one. Anyone who shares Kivuko or a fork must include the license and its Required Notice.
+Copyright 2026 piedol.
+
+Kivuko is free software under the [GNU General Public License v3.0 or later](LICENSE). You can use, study, share and change it, including at work. If you distribute a modified version, you must release its source under the same license.
 
 WireGuard is a registered trademark of Jason A. Donenfeld. NordVPN and NordLynx are trademarks of Nord Security, which is not affiliated with this project.
