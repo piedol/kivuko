@@ -1,6 +1,6 @@
 # Building and running Kivuko
 
-Kivuko is built from source on your Mac and signed with your Apple developer account. There is no notarized download. The VPN part is a NetworkExtension app extension, and macOS loads it only when it is signed with a provisioning profile from a paid developer account.
+This guide builds Kivuko from source and signs it with your Apple developer account. To use Kivuko, download the notarized release instead (README › Install). The development build's VPN part is a NetworkExtension app extension, and macOS loads it only when it is signed with a provisioning profile from a paid developer account.
 
 ## What you need
 

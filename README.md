@@ -19,7 +19,7 @@
 
 Kivuko connects your Mac to NordVPN over WireGuard (NordLynx) from the menu bar. Its kill switch is enforced by macOS. Kivuko reconnects after sleep and network changes, and it can block ads and trackers through NordVPN's DNS. The menu bar app uses about 23 MB of memory and the tunnel about 8 MB.
 
-Its tunnel runs [GotaTun](https://github.com/mullvad/gotatun), Mullvad's Rust implementation of WireGuard, inside a macOS packet-tunnel extension. macOS starts and restarts that extension, for example after sleep.
+Its tunnel runs [GotaTun](https://github.com/mullvad/gotatun), Mullvad's Rust implementation of WireGuard, inside a macOS system extension. macOS starts and restarts the tunnel, for example after sleep.
 
 <p align="center"><sub><em>Kivuko</em> (kee-VOO-koh) is Swahili for "crossing" or "ferry".</sub></p>
 
@@ -53,12 +53,24 @@ Its tunnel runs [GotaTun](https://github.com/mullvad/gotatun), Mullvad's Rust im
 
 - A Mac with Apple silicon and macOS 14 or later (so far tested only on macOS 26)
 - A NordVPN subscription
-- A paid [Apple Developer Program](https://developer.apple.com/programs/) membership. macOS loads VPN extensions only when they're signed through a paid account, so there's no ready-made download. You build and sign Kivuko yourself.
-- Xcode signed in with that account, [XcodeGen](https://github.com/yonaskolb/XcodeGen) and Rust 1.95 or later
 
 ## Install
 
-The full guide is [docs/setup.md](docs/setup.md).
+1. Download `Kivuko-macOS-arm64.zip` from the [Releases page](https://github.com/piedol/kivuko/releases). It's signed and notarized by Apple.
+2. Unzip it, drag **Kivuko** into your Applications folder and open it from there. macOS installs Kivuko's tunnel only for an app in Applications.
+3. Click the shield in the menu bar and choose **Allow Kivuko's VPN in System Settings…**. Turn Kivuko on under General › Login Items & Extensions › Network Extensions, and enter your password when macOS asks.
+4. Get a NordVPN access token from [Nord Account](https://my.nordaccount.com/) › NordVPN › Advanced settings › Access token.
+5. Choose **Set Up and Connect** in the menu. Paste the token, click **Save and Connect**, then click **Allow** when macOS asks to add a VPN configuration.
+
+Later versions install from the menu: **Check for Updates…**, or the daily check.
+
+### Uninstall
+
+Follow [Uninstalling](docs/setup.md#uninstalling) in order. Deleting the app first can leave the kill switch blocking your connection until you remove the VPN configuration.
+
+## Build from source
+
+You need a paid [Apple Developer Program](https://developer.apple.com/programs/) membership: macOS loads VPN extensions only when they're signed through a paid account. The full guide is [docs/setup.md](docs/setup.md).
 
 1. Clone the repository and choose a bundle ID prefix of your own, such as `com.yourname`:
 
@@ -72,22 +84,13 @@ The full guide is [docs/setup.md](docs/setup.md).
 
    Set `KIVUKO_BUNDLE_PREFIX` in `signing/local.env`, and `KIVUKO_TEAM` if your Apple ID is in several developer teams. `scripts/bundle.sh --check` shows what will be signed.
 
-2. Build, sign and install. On the first run, Xcode registers your Mac and the two bundle IDs and downloads development profiles:
+2. Build, sign and install the development build. On the first run, Xcode registers your Mac and the two bundle IDs and downloads development profiles:
 
    ```bash
    scripts/bundle.sh --install
    ```
 
-3. Get a NordVPN access token from [Nord Account](https://my.nordaccount.com/) › NordVPN › Advanced settings › Access token.
-4. Click the shield in the menu bar and choose **Set Up and Connect**. Paste the token, click **Save and Connect**, then click **Allow** when macOS asks to add a VPN configuration.
-
-Development profiles last a year. When they expire, macOS stops loading Kivuko, and running `scripts/bundle.sh --install` again renews them. Don't keep a second copy of Kivuko on your Mac. When two copies of the tunnel extension are registered, opening either copy of the app makes macOS stop the other's tunnel, which drops the VPN.
-
-### Uninstall
-
-Follow [Uninstalling](docs/setup.md#uninstalling) in order. Deleting the app first can leave the kill switch blocking your connection until you remove the VPN configuration.
-
-## Build from source
+Development profiles last a year. When they expire, macOS stops loading the development build, and running `scripts/bundle.sh --install` again renews them. Don't install a second copy of Kivuko: with two copies of the tunnel registered, opening either app makes macOS stop the other's tunnel, which drops the VPN.
 
 `scripts/bundle.sh` builds Kivuko in two ways. Both need Xcode signed in with a paid Apple Developer Program account, XcodeGen and Rust 1.95 or later. On the first run of each, Xcode creates the provisioning profiles by building the stub project in `signing/`.
 
