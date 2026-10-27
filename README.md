@@ -5,7 +5,7 @@
 <h1 align="center">Kivuko</h1>
 
 <p align="center">
-  A NordVPN client for the Mac menu bar, built on WireGuard.
+  A NordVPN client for the Mac menu bar, written in Rust and built on WireGuard.
 </p>
 
 <p align="center">
@@ -19,7 +19,7 @@
 
 Kivuko connects your Mac to NordVPN over WireGuard (NordLynx) from the menu bar. Its kill switch is enforced by macOS. Kivuko reconnects after sleep and network changes, and it can block ads and trackers through NordVPN's DNS. The menu bar app uses about 23 MB of memory and the tunnel about 8 MB.
 
-Kivuko is written in Rust. Its tunnel runs [GotaTun](https://github.com/mullvad/gotatun), Mullvad's Rust implementation of WireGuard, inside a macOS packet-tunnel extension. macOS starts and restarts that extension, for example after sleep.
+Its tunnel runs [GotaTun](https://github.com/mullvad/gotatun), Mullvad's Rust implementation of WireGuard, inside a macOS packet-tunnel extension. macOS starts and restarts that extension, for example after sleep.
 
 <p align="center"><sub><em>Kivuko</em> (kee-VOO-koh) is Swahili for "crossing" or "ferry".</sub></p>
 
