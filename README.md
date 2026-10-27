@@ -115,10 +115,12 @@ cargo build --release -F app/sysext -F provider/sysext
 ## How it works
 
 ```text
-Kivuko.app                              app/       menu bar app: menu, token prompt, VPN configuration
-└── Contents/PlugIns/
-    └── KivukoTunnel.appex              provider/  packet-tunnel extension: server choice, GotaTun, watchdog
+Kivuko.app                                           app/       menu bar app: menu, token prompt, VPN configuration
+└── Contents/Library/SystemExtensions/
+    └── top.piedol.kivuko.tunnel.systemextension     provider/  packet tunnel: server choice, GotaTun, watchdog
 ```
+
+The development build carries the same tunnel as an app extension, `Contents/PlugIns/KivukoTunnel.appex`.
 
 - The menu bar app manages the VPN configuration that macOS keeps in System Settings › VPN, including the kill switch, the On-Demand rule and the DNS choice.
 - The tunnel is a NetworkExtension packet-tunnel provider. macOS starts it whenever the VPN starts, including automatic reconnects while the app isn't running.
