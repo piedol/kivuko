@@ -322,7 +322,7 @@ do {
     let s: CGFloat = 1
     let real = image("docs/images/menu.png").map(pixels) ?? menu
     let m = CGSize(width: real.width * s, height: real.height * s)
-    let lines = ["A tiny NordVPN client", "for your menu bar"]
+    let lines = ["A NordVPN client", "for the Mac menu bar"]
     let icon: CGFloat = 200, gap: CGFloat = 220
     let top = (H - m.height) / 2
     // Measure on a throwaway canvas, since the glow's position depends on the result.
@@ -348,7 +348,7 @@ do {
     let top = (640 - m.height) / 2
     let c = Canvas(1280, 640, corner: 0, accent: violet,
                    glows: [Glow(x: Double(cx), top: Double(top + m.height * 0.55), radius: 520, alpha: 0.26)])
-    c.nameBlock(appName, ["A tiny NordVPN client", "for your menu bar"], x: 96, top: 214, icon: 128, copy: 40)
+    c.nameBlock(appName, ["A NordVPN client", "for the Mac menu bar"], x: 96, top: 214, icon: 128, copy: 40)
     c.label(disclaimer, size: 18, weight: .regular, alpha: 0.42).draw(at: CGPoint(x: 96, y: 72))
     c.shot("menu.png", expect: menu, cx: cx, top: top, scale: s)
     c.write("social-preview.png")

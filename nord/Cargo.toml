@@ -1,6 +1,6 @@
 [package]
 name = "nord"
-description = "Minimal client for the NordVPN API: server recommendations, countries and the NordLynx private key"
+description = "Client for the NordVPN API: server recommendations, countries and the NordLynx private key"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

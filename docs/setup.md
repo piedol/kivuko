@@ -1,11 +1,11 @@
 # Building and running Kivuko
 
-Kivuko is built from source and signed on your own Mac with your own Apple developer account. There is no notarized download: the VPN part is a NetworkExtension app extension, and macOS only loads one that is signed with a provisioning profile from a paid developer account.
+Kivuko is built from source on your Mac and signed with your Apple developer account. There is no notarized download. The VPN part is a NetworkExtension app extension, and macOS loads it only when it is signed with a provisioning profile from a paid developer account.
 
 ## What you need
 
 - An Apple silicon Mac with macOS 14 or later. Kivuko is tested on macOS 26.
-- A paid [Apple Developer Program](https://developer.apple.com/programs/) membership, 99 USD a year. A free Apple Account isn't enough: Apple's [table of supported macOS capabilities](https://developer.apple.com/help/account/reference/supported-capabilities-macos) lists Network Extensions for Apple Developer Program members and Developer ID only, not for free accounts.
+- A paid [Apple Developer Program](https://developer.apple.com/programs/) membership, 99 USD a year. A free Apple Account isn't enough. Apple's [table of supported macOS capabilities](https://developer.apple.com/help/account/reference/supported-capabilities-macos) lists Network Extensions only for Apple Developer Program members and Developer ID.
 - Xcode, signed in with that account (Xcode › Settings › Accounts). The Command Line Tools alone aren't enough, because Xcode's automatic signing creates the certificate and profiles.
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`.
 - Rust 1.95 or later, from [rustup](https://rustup.rs). The WireGuard library, GotaTun, needs 1.95.
@@ -13,16 +13,16 @@ Kivuko is built from source and signed on your own Mac with your own Apple devel
 
 ## 1. Choose your team and bundle IDs
 
-Bundle IDs are unique across all Apple developer accounts, so you need a prefix that's yours, such as `com.yourname`. The app becomes `com.yourname.kivuko` and the tunnel `com.yourname.kivuko.tunnel`. The default prefix, `top.piedol`, is the project's own and only signs for its owner.
+Bundle IDs are unique across all Apple developer accounts. Pick a prefix that's yours, such as `com.yourname`. The app becomes `com.yourname.kivuko` and the tunnel `com.yourname.kivuko.tunnel`. The default prefix, `top.piedol`, is the project's and signs only for its owner.
 
 `scripts/bundle.sh` reads two settings:
 
 | Variable | Default |
 |---|---|
 | `KIVUKO_BUNDLE_PREFIX` | `top.piedol` |
-| `KIVUKO_TEAM` | The team of the one Apple Development certificate in your login keychain |
+| `KIVUKO_TEAM` | The team of the Apple Development certificate in your login keychain |
 
-Your team ID is 10 characters, like `ABCDE12345`, and is listed under Membership details at [developer.apple.com/account](https://developer.apple.com/account). The script finds it in the certificate's subject (its Organizational Unit). The code in parentheses after your name in the certificate's name, as in "Apple Development: Your Name (XXXXXXXXXX)", is not the team ID. If you've never built a Mac app with this account, you don't have the certificate yet, so set `KIVUKO_TEAM` and Xcode creates the certificate on the first build. If you have certificates for more than one team, the script stops and asks you to set `KIVUKO_TEAM`.
+Your team ID is 10 characters, like `ABCDE12345`, and is listed under Membership details at [developer.apple.com/account](https://developer.apple.com/account). The script finds it in the certificate's subject (its Organizational Unit). The code in parentheses after your name in the certificate's name, as in "Apple Development: Your Name (XXXXXXXXXX)", is not the team ID. If you've never built a Mac app with this account, you don't have the certificate yet, so set `KIVUKO_TEAM` and Xcode creates the certificate on the first build. If you have certificates for different teams, the script stops and asks you to set `KIVUKO_TEAM`.
 
 To set them once, copy the example file and edit it. `signing/local.env` is ignored by git, and values already set in the environment win over it.
 
@@ -57,9 +57,9 @@ The first run asks Xcode for development signing by building a stub project in `
 
 The script then builds the app and the tunnel with cargo, assembles `dist/Kivuko.app` with the tunnel at `Contents/PlugIns/KivukoTunnel.appex`, embeds the profiles and signs both with your certificate. With `--install` it replaces `/Applications/Kivuko.app`, removes the copy in `dist/` and opens the app. Without `--install` it stops at `dist/Kivuko.app`.
 
-Keep one copy of Kivuko on the Mac. Two copies of the tunnel extension share a bundle ID, and when you open one, macOS removes the other's extension and stops the running tunnel, which drops the VPN. So don't open `dist/Kivuko.app` while another copy is installed.
+Don't keep a second copy of Kivuko on your Mac. Two copies of the tunnel extension share a bundle ID, and when you open either copy, macOS removes the other's extension and stops the running tunnel, which drops the VPN. So don't open `dist/Kivuko.app` while another copy is installed.
 
-The build isn't notarized and doesn't need to be: it's built on this Mac, so macOS never quarantines it. The profiles cover only the Macs registered in your account, so the app won't run on anyone else's.
+The build isn't notarized. It doesn't need to be, because it's built on this Mac and macOS never quarantines it. The profiles cover only the Macs registered in your account, so the app won't run on anyone else's.
 
 ## 3. Get a NordVPN access token
 
@@ -79,7 +79,7 @@ The tunnel fetches your WireGuard key from Nord, picks a server and connects. On
 
 ## Every year
 
-Development profiles and Apple Development certificates expire after a year. When the profiles expire, macOS stops loading the app and its tunnel. Run `scripts/bundle.sh --install` again before then: the script sees the expired profiles, Xcode renews them (and the certificate, if it has expired), and the script reinstalls the app. Renewal needs an active membership.
+Development profiles and Apple Development certificates expire after a year. When the profiles expire, macOS stops loading the app and its tunnel. Run `scripts/bundle.sh --install` again when that happens. The script sees the expired profiles, Xcode renews them (and the certificate, if it has expired), and the script reinstalls the app. Renewal needs an active membership.
 
 To see when the installed profile expires:
 
@@ -89,7 +89,7 @@ security cms -D -i /Applications/Kivuko.app/Contents/embedded.provisionprofile |
 
 ## Logs
 
-The app and the tunnel both log to the unified log under the app's bundle ID. The build script prints the command for your prefix when it finishes; with the default prefix it is:
+The app and the tunnel both log to the unified log under the app's bundle ID. The build script prints the command for your prefix when it finishes. With the default prefix it is:
 
 ```bash
 log stream --predicate 'subsystem == "top.piedol.kivuko"' --level info
@@ -103,7 +103,7 @@ Use `log show` with the same predicate and `--last 1h --info` for earlier messag
 |---|---|
 | NordVPN access token | Login keychain, service `Kivuko`, account `NordVPN token` |
 | WireGuard private key and the last good server list | `~/Library/Containers/<prefix>.kivuko.tunnel/Data/Library/Application Support/state.json`, the tunnel's sandbox container, readable only by you (mode 0600) |
-| Kill Switch, Auto-Connect, DNS and location choices | `~/Library/Application Support/Kivuko/settings.json`, written the first time you change one |
+| Kill Switch, Auto-Connect, DNS and location choices | `~/Library/Application Support/Kivuko/settings.json`, written the first time you change a setting |
 | Nord's country list | `~/Library/Caches/Kivuko/countries.json`, refreshed weekly |
 | The VPN configuration | macOS's own store (System Settings › VPN). It holds the country and DNS choice and nothing secret, because every user on the Mac can read it |
 
@@ -112,7 +112,7 @@ Use `log show` with the same predicate and `--last 1h --info` for earlier messag
 1. In Kivuko's menu, turn off Launch at Login, then choose Quit Kivuko. Quitting turns the VPN off and stops it reconnecting.
 2. In System Settings › VPN, click the info button next to Kivuko and remove the configuration.
 3. Move `/Applications/Kivuko.app` to the Trash.
-4. Delete the token: in Keychain Access, search the login keychain for "Kivuko" and delete the item, or run `security delete-generic-password -s Kivuko -a "NordVPN token"`.
+4. To delete the token, search the login keychain in Keychain Access for "Kivuko" and delete the item, or run `security delete-generic-password -s Kivuko -a "NordVPN token"`.
 5. Move these folders to the Trash: `~/Library/Application Support/Kivuko`, `~/Library/Caches/Kivuko` and `~/Library/Containers/<prefix>.kivuko.tunnel`.
 
 Quit before you delete the app. If Auto-Connect is still on, macOS keeps trying to start a tunnel that is no longer there, and with the Kill Switch on it blocks traffic while it tries, until you remove the configuration.
@@ -126,4 +126,4 @@ cargo test                          # unit tests
 cargo test -p nord -- --ignored     # live checks against Nord's API
 ```
 
-A plain `cargo build` or `cargo test` uses `com.example.kivuko` placeholders for the bundle IDs. Only `scripts/bundle.sh` passes your own.
+Running `cargo build` or `cargo test` directly uses `com.example.kivuko` placeholders for the bundle IDs. Only `scripts/bundle.sh` passes your own.
