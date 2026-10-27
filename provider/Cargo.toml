@@ -1,6 +1,6 @@
 [package]
 name = "provider"
-description = "The packet-tunnel app extension: picks a Nord server and runs WireGuard (GotaTun) on the utun macOS creates"
+description = "The packet-tunnel provider: picks a Nord server and runs WireGuard (GotaTun) on the utun macOS creates"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,6 +9,10 @@ publish.workspace = true
 [[bin]]
 name = "provider"
 path = "src/main.rs"
+
+[features]
+# The Developer ID release: run as a system extension instead of an app extension.
+sysext = ["dep:dispatch2"]
 
 [dependencies]
 nord.workspace = true
@@ -26,6 +30,7 @@ objc2.workspace = true
 objc2-foundation.workspace = true
 objc2-network-extension.workspace = true
 block2.workspace = true
+dispatch2 = { workspace = true, optional = true }
 
 [dev-dependencies]
 bytes = "1"

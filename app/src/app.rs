@@ -15,6 +15,7 @@ use objc2_network_extension::{NEVPNStatus, NEVPNStatusDidChangeNotification};
 use objc2_service_management::{SMAppService, SMAppServiceStatus};
 use shared::{Dns, Status};
 
+use crate::extension::{self, State as Tunnel};
 use crate::prefs::{self, Place};
 use crate::util::{self, ns};
 use crate::{countries, keychain, ui, vpn};
@@ -29,6 +30,8 @@ mod tag {
     pub const LOGIN: isize = 7;
     pub const QUIT: isize = 8;
     pub const TOKEN: isize = 11;
+    pub const ALLOW_TUNNEL: isize = 12;
+    pub const ACTIVATE_TUNNEL: isize = 13;
     pub const COUNTRY: isize = 100_000;
 }
 
@@ -58,6 +61,11 @@ thread_local! {
     /// Auto-Connect at launch waits for macOS's first real status (it reports Invalid
     /// for a moment after loading, even while the tunnel is up).
     static LAUNCH_CHECK: Cell<bool> = const { Cell::new(false) };
+    /// A Connect that came before macOS had activated the system extension. It runs once
+    /// the tunnel is active.
+    static CONNECT_WHEN_READY: Cell<bool> = const { Cell::new(false) };
+    /// The VPN configuration is being saved again for the system extension.
+    static ADOPTING: Cell<bool> = const { Cell::new(false) };
 }
 
 pub fn run() {
@@ -97,6 +105,8 @@ pub fn launched(mtm: MainThreadMarker) {
     install_main_menu(mtm);
     build_status_item(mtm);
     countries::refresh_async();
+    // Developer ID builds: the system extension must be active before the VPN can start.
+    extension::activate();
     let center = NSNotificationCenter::defaultCenter();
     unsafe {
         center.addObserver_selector_name_object(
@@ -116,6 +126,7 @@ pub fn launched(mtm: MainThreadMarker) {
             // If macOS never reports a status change, decide after a few seconds.
             util::main_after(3.0, || launch_auto_connect(true));
         }
+        adopt_configuration();
     });
     // `KIVUKO_SHOW_MENU=<seconds>` opens the menu that long after launch, for README
     // screenshots.
@@ -190,12 +201,49 @@ fn launch_auto_connect(give_up_waiting: bool) {
         NEVPNStatus::Invalid => return,
         _ => {
             LAUNCH_CHECK.with(|c| c.set(false));
-            return;
+            return adopt_configuration();
         }
     }
     LAUNCH_CHECK.with(|c| c.set(false));
     log::info!("connecting at launch (Auto-Connect)");
     connect();
+}
+
+/// The system extension's activation moved on (Developer ID builds).
+#[cfg_attr(not(feature = "sysext"), allow(dead_code))]
+pub fn extension_changed() {
+    if extension::ready() {
+        if CONNECT_WHEN_READY.with(|c| c.replace(false)) {
+            connect();
+        } else {
+            adopt_configuration();
+        }
+    }
+    refresh();
+}
+
+/// The first time a Developer ID build runs, save the VPN configuration again, so it points
+/// at the system extension. The tunnel keeps its bundle ID, so the settings don't change.
+/// A Connect saves it anyway, so this waits while one is on its way.
+fn adopt_configuration() {
+    let waiting = LAUNCH_CHECK.with(Cell::get) || CONNECT_WHEN_READY.with(Cell::get) || ADOPTING.with(Cell::get);
+    if !extension::SYSTEM_EXTENSION
+        || waiting
+        || !extension::ready()
+        || !vpn::exists()
+        || prefs::get().saved_for_system_extension
+    {
+        return;
+    }
+    log::info!("saving the VPN configuration for the system extension");
+    ADOPTING.with(|a| a.set(true));
+    vpn::save(&prefs::get(), vpn::on_demand(), |result| {
+        ADOPTING.with(|a| a.set(false));
+        if let Err(e) = result {
+            set_problem(Some(Problem::ConnectFailed(format!("macOS didn't save the VPN configuration: {e}"))));
+        }
+        refresh();
+    });
 }
 
 pub fn vpn_status_changed() {
@@ -251,6 +299,11 @@ pub fn vpn_status_changed() {
 /// Connect, setting up whatever's missing on the way.
 pub fn connect() {
     if matches!(vpn::status(), NEVPNStatus::Connected | NEVPNStatus::Connecting | NEVPNStatus::Reasserting) {
+        return refresh();
+    }
+    if !extension::ready() {
+        log::info!("connect waits until macOS has activated the tunnel");
+        CONNECT_WHEN_READY.with(|c| c.set(true));
         return refresh();
     }
     let Some(token) = keychain::token() else {
@@ -418,6 +471,16 @@ fn fetch_status() {
 fn header_text() -> (String, String) {
     let p = prefs::get();
     let place = p.country.as_ref().map(|c| c.name.clone());
+    let down = matches!(vpn::status(), NEVPNStatus::Disconnected | NEVPNStatus::Invalid);
+    if down && !extension::ready() {
+        let title = if vpn::exists() { "Not Connected" } else { "Not Set Up" };
+        let detail = match extension::state() {
+            Tunnel::NeedsApproval => "Waiting for you to allow the VPN in System Settings",
+            Tunnel::Failed(_) => "macOS hasn't started Kivuko's VPN",
+            _ => "Starting Kivuko's VPN",
+        };
+        return (title.into(), detail.into());
+    }
     if !vpn::exists() {
         return ("Not Set Up".into(), "Connect once to install the VPN".into());
     }
@@ -475,7 +538,8 @@ fn update_action() {
     };
     action.setTitle(&ns(title));
     action.setTag(tag);
-    action.setEnabled(tag != 0);
+    // Connect needs an active tunnel; Disconnect always works.
+    action.setEnabled(tag != 0 && (tag != tag::CONNECT || extension::ready()));
 }
 
 fn build_menu(menu: &NSMenu) {
@@ -539,6 +603,24 @@ fn build_menu(menu: &NSMenu) {
 
     // Problems, only while they exist. Each row fixes its own problem.
     let mut problems = Vec::new();
+    let tunnel = extension::state();
+    if tunnel != Tunnel::Active && !extension::in_applications() {
+        let i = menu_item(mtm, "Move Kivuko to Applications", 0);
+        unsafe { i.setAction(None) };
+        i.setSubtitle(Some(&ns("macOS starts its VPN only from the Applications folder")));
+        problems.push(i);
+    } else if tunnel == Tunnel::NeedsApproval {
+        let (_, pane) = extension::approval_pane();
+        let i = menu_item(mtm, "Allow Kivuko's VPN in System Settings…", tag::ALLOW_TUNNEL);
+        i.setSubtitle(Some(&ns(pane)));
+        i.setToolTip(Some(&ns("macOS asks once before it runs Kivuko's VPN. Connect works once you allow it.")));
+        problems.push(i);
+    } else if let Tunnel::Failed(e) = tunnel {
+        let i = menu_item(mtm, "Couldn't Start Kivuko's VPN", tag::ACTIVATE_TUNNEL);
+        i.setSubtitle(Some(&ns(&e)));
+        i.setToolTip(Some(&ns(&format!("{e}\n\nClick to try again."))));
+        problems.push(i);
+    }
     match PROBLEM.with(|p| p.borrow().clone()) {
         Some(Problem::NoToken) => {
             let i = menu_item(mtm, "Add Your NordVPN Token…", tag::TOKEN);
@@ -642,6 +724,11 @@ pub fn handle_tag(t: isize) {
         }
         tag::QUIT => quit(),
         tag::TOKEN => ask_for_token(),
+        tag::ALLOW_TUNNEL => open_url(extension::approval_pane().0),
+        tag::ACTIVATE_TUNNEL => {
+            extension::activate();
+            refresh();
+        }
         t if t >= tag::COUNTRY => {
             let id = (t - tag::COUNTRY) as u32;
             let name = countries::list()

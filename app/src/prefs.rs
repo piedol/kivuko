@@ -25,11 +25,23 @@ pub struct Prefs {
     pub country: Option<Place>,
     /// Last few countries chosen, newest first.
     pub recent: Vec<Place>,
+    /// The VPN configuration was last saved by a build whose tunnel is a system extension.
+    /// A Developer ID build that finds this false saves the configuration again, so macOS
+    /// starts the system extension, not a development build's app extension.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub saved_for_system_extension: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { kill_switch: true, auto_connect: true, dns: Dns::BlockAds, country: None, recent: Vec::new() }
+        Prefs {
+            kill_switch: true,
+            auto_connect: true,
+            dns: Dns::BlockAds,
+            country: None,
+            recent: Vec::new(),
+            saved_for_system_extension: false,
+        }
     }
 }
 
@@ -108,5 +120,16 @@ mod tests {
         let p: Prefs = serde_json::from_str("{}").unwrap();
         assert!(p.kill_switch && p.auto_connect);
         assert_eq!(p.dns, Dns::BlockAds);
+        assert!(!p.saved_for_system_extension);
+    }
+
+    #[test]
+    fn system_extension_mark_is_written_only_when_set() {
+        // Development builds leave settings.json as it was before the mark existed.
+        let mut p = Prefs::default();
+        assert!(!serde_json::to_string(&p).unwrap().contains("saved_for_system_extension"));
+        p.saved_for_system_extension = true;
+        let back: Prefs = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert!(back.saved_for_system_extension);
     }
 }

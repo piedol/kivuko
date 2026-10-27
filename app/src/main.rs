@@ -1,8 +1,10 @@
-//! Kivuko: a lightweight NordVPN client for macOS. This is the menu-bar app; the WireGuard
-//! tunnel itself runs in an app extension (provider/) that macOS starts on its own.
+//! Kivuko: a NordVPN client for macOS. This is the menu-bar app. The WireGuard tunnel runs
+//! in a NetworkExtension provider (provider/) that macOS starts: an app extension in
+//! development builds, a system extension in Developer ID builds (feature `sysext`).
 
 mod app;
 mod countries;
+mod extension;
 mod keychain;
 mod prefs;
 mod ui;

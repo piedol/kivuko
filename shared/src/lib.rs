@@ -132,7 +132,9 @@ mod tests {
 
     #[test]
     fn tunnel_id_sits_under_the_app_id() {
-        // macOS only accepts an app extension whose bundle ID extends its app's.
+        // macOS only accepts an app extension whose bundle ID extends its app's. For the system
+        // extension, this also makes its Mach service name (<team>.<tunnel ID>) start with the
+        // app group (<team>.<app ID>), as macOS requires.
         let rest = ids::PROVIDER_BUNDLE.strip_prefix(ids::APP_BUNDLE);
         assert!(rest.is_some_and(|r| r.len() > 1 && r.starts_with('.')), "{}", ids::PROVIDER_BUNDLE);
     }

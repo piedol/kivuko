@@ -25,6 +25,7 @@ dependencies = [
  "objc2-foundation",
  "objc2-network-extension",
  "objc2-service-management",
+ "objc2-system-extensions",
  "oslog",
  "security-framework",
  "serde",
@@ -1005,6 +1006,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-system-extensions"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a00ca10e1fd778a1dd13d579afb37168422ef4bbb36b6723179c2228f6b8372c"
+dependencies = [
+ "dispatch2",
+ "objc2",
+ "objc2-foundation",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1113,6 +1125,7 @@ dependencies = [
  "base64 0.22.1",
  "block2",
  "bytes",
+ "dispatch2",
  "gotatun",
  "ipnetwork",
  "libc",

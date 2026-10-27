@@ -10,6 +10,11 @@ publish.workspace = true
 name = "Kivuko"
 path = "src/main.rs"
 
+[features]
+# The Developer ID release: the tunnel is a system extension, which the app asks macOS to
+# activate at launch. Without it, the tunnel is an app extension (development signing).
+sysext = ["dep:objc2-system-extensions"]
+
 [dependencies]
 nord.workspace = true
 shared.workspace = true
@@ -22,6 +27,7 @@ objc2-foundation.workspace = true
 objc2-app-kit.workspace = true
 objc2-network-extension.workspace = true
 objc2-service-management.workspace = true
+objc2-system-extensions = { workspace = true, optional = true }
 block2.workspace = true
 dispatch2.workspace = true
 security-framework = "3.7"

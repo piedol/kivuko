@@ -1,5 +1,5 @@
 //! The VPN configuration macOS keeps for us (System Settings › VPN), and the connection to
-//! the tunnel extension. Everything here runs on the main thread.
+//! the tunnel. Everything here runs on the main thread.
 
 use std::cell::RefCell;
 
@@ -100,6 +100,10 @@ pub fn save(prefs: &Prefs, on_demand: bool, then: impl FnOnce(Result<(), String>
             return then(Err(e));
         }
         MANAGER.with(|cell| *cell.borrow_mut() = Some(saved.clone()));
+        let sysext = crate::extension::SYSTEM_EXTENSION;
+        if crate::prefs::get().saved_for_system_extension != sysext {
+            crate::prefs::update(|p| p.saved_for_system_extension = sysext);
+        }
         // A saved configuration must be reloaded before it can be started.
         let reloaded = RcBlock::new(once(move |err: *mut NSError| match error_text(err) {
             Some(e) => then(Err(e)),
