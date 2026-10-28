@@ -14,7 +14,7 @@ dependencies = [
 
 [[package]]
 name = "app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "block2",
  "dispatch2",
@@ -802,7 +802,7 @@ dependencies = [
 
 [[package]]
 name = "nord"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -1133,7 +1133,7 @@ dependencies = [
 
 [[package]]
 name = "provider"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "block2",
@@ -1354,7 +1354,7 @@ dependencies = [
 
 [[package]]
 name = "shared"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
