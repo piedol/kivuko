@@ -323,6 +323,9 @@ fn present(alert: Retained<NSAlert>, buttons: &[(Retained<NSButton>, isize)]) {
     #[allow(deprecated)]
     ui::app(mtm).activateIgnoringOtherApps(true);
     window.makeKeyAndOrderFront(None);
+    // The answer to a check arrives after the menu has closed, so the window could open
+    // behind other apps' windows; put it in front of them.
+    window.orderFrontRegardless();
     ALERT.with(|a| *a.borrow_mut() = Some(alert));
 }
 
